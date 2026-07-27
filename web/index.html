@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>jupyddl playground — PDDL planning in your browser</title>
+<meta name="description" content="Write PDDL, pick a planner and a heuristic, and watch a real A* search run in your browser. jupyddl is a pure-Python PDDL planning framework." />
+<link rel="stylesheet" href="style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧭</text></svg>" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">🧭</span>
+    <div>
+      <h1>jupyddl <span class="tag">playground</span></h1>
+      <p class="sub">A pure-Python PDDL planner — running for real, in this tab.</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <a class="ghost" href="https://github.com/APLA-Toolbox/PythonPDDL">GitHub</a>
+    <button id="theme-toggle" class="ghost" type="button" aria-label="Switch colour theme">
+      <span id="theme-icon">◐</span> Theme
+    </button>
+  </div>
+</header>
+
+<div id="boot" class="boot">
+  <div class="boot-inner">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="boot-text">Starting the Python runtime…</p>
+    <p class="boot-note">The planner runs entirely in your browser. Nothing is uploaded.</p>
+  </div>
+</div>
+
+<main id="app" hidden>
+  <section class="controls" aria-label="Run configuration">
+    <div class="field">
+      <label for="demo">Instance</label>
+      <select id="demo"></select>
+    </div>
+    <div class="field">
+      <label for="planner">Planner</label>
+      <select id="planner"></select>
+    </div>
+    <div class="field">
+      <label for="heuristic">Heuristic</label>
+      <select id="heuristic"></select>
+    </div>
+    <div class="field grow">
+      <span class="blurb" id="blurb"></span>
+    </div>
+    <button id="run" class="primary" type="button">Run search</button>
+    <button id="race" class="secondary" type="button">Race 4 planners</button>
+  </section>
+
+  <section class="grid">
+    <div class="pane editors">
+      <div class="pane-head">
+        <h2>PDDL</h2>
+        <div class="tabs" role="tablist">
+          <button class="tab active" role="tab" data-tab="domain" aria-selected="true">domain.pddl</button>
+          <button class="tab" role="tab" data-tab="problem" aria-selected="false">problem.pddl</button>
+        </div>
+      </div>
+      <textarea id="domain" class="editor" spellcheck="false" aria-label="PDDL domain"></textarea>
+      <textarea id="problem" class="editor" spellcheck="false" hidden aria-label="PDDL problem"></textarea>
+    </div>
+
+    <div class="pane">
+      <div class="pane-head"><h2>Live search</h2><span class="hint" id="task-info"></span></div>
+      <div class="stats" id="stats">
+        <div class="stat"><span class="stat-value" id="s-expanded">0</span><span class="stat-label">expanded</span></div>
+        <div class="stat"><span class="stat-value" id="s-generated">0</span><span class="stat-label">generated</span></div>
+        <div class="stat"><span class="stat-value" id="s-open">0</span><span class="stat-label">frontier</span></div>
+        <div class="stat"><span class="stat-value" id="s-time">0.00s</span><span class="stat-label">elapsed</span></div>
+      </div>
+      <div class="chart-block">
+        <div class="chart-head">
+          <h3>Cost estimates</h3>
+          <div class="legend" id="legend-cost"></div>
+        </div>
+        <div class="chart-host" id="chart-cost"></div>
+      </div>
+      <div class="chart-block">
+        <div class="chart-head">
+          <h3>Frontier size</h3>
+          <span class="hint">nodes waiting on the open list</span>
+        </div>
+        <div class="chart-host short" id="chart-open"></div>
+      </div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-head">
+        <h2>Search wavefront</h2>
+        <span class="hint">ring = depth · colour = h</span>
+      </div>
+      <div class="wavefront-host">
+        <canvas id="wavefront" aria-label="Radial view of the expanded search nodes"></canvas>
+      </div>
+      <div class="legend spread">
+        <span class="legend-item"><i class="dot low"></i> low h (near the goal)</span>
+        <span class="legend-item"><i class="dot high"></i> high h (far away)</span>
+      </div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-head"><h2>Result</h2><span class="hint" id="verdict"></span></div>
+      <div id="plan-empty" class="empty">Run a search to see the plan.</div>
+      <ol id="plan" class="plan" hidden></ol>
+    </div>
+
+    <div class="pane wide" id="race-pane" hidden>
+      <div class="pane-head">
+        <h2>Planner race</h2>
+        <button id="race-table-toggle" class="ghost small" type="button">Show table</button>
+      </div>
+      <div class="race-grid">
+        <div class="chart-block">
+          <div class="chart-head"><h3>Nodes expanded <span class="hint">log scale</span></h3></div>
+          <div id="race-expanded"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-head"><h3>Runtime</h3></div>
+          <div id="race-runtime"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-head"><h3>Plan cost <span class="hint">lower is better</span></h3></div>
+          <div id="race-cost"></div>
+        </div>
+      </div>
+      <table id="race-table" class="data-table" hidden>
+        <caption>Race results</caption>
+        <thead>
+          <tr><th scope="col">Configuration</th><th scope="col">Expanded</th>
+          <th scope="col">Generated</th><th scope="col">Runtime (ms)</th>
+          <th scope="col">Cost</th><th scope="col">Valid</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div id="error" class="error" hidden></div>
+
+  <footer class="footer">
+    <span id="build-info"></span>
+    <span>Everything on this page is computed locally by
+      <a href="https://github.com/APLA-Toolbox/PythonPDDL">jupyddl</a>
+      running under <a href="https://pyodide.org">Pyodide</a>.</span>
+  </footer>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

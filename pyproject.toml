@@ -21,7 +21,9 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.5"]
+# 3.6 is the floor for the constrained-layout engine API the charts rely on
+# (``layout="constrained"`` plus ``Figure.get_layout_engine``).
+viz = ["matplotlib>=3.6"]
 dev = ["pytest>=7", "pytest-cov>=4", "flake8>=6", "black>=23"]
 
 [project.scripts]
