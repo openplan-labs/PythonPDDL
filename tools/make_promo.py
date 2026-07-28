@@ -29,6 +29,9 @@ from matplotlib.patches import FancyBboxPatch  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jupyddl import build_task, solve_task, trace_search, validate_plan  # noqa: E402
+from jupyddl.generator import GENERATORS  # noqa: E402
+from jupyddl.requirements import as_rows, summary  # noqa: E402
+from jupyddl.search import PLANNERS  # noqa: E402
 from jupyddl.viz.theme import DARK  # noqa: E402
 
 FPS = 30
@@ -209,6 +212,38 @@ def collect(root: str) -> dict:
         )
         print(f"    {label}: {result.stats.expanded:,} expanded")
     data["showdown"] = rows
+
+    # --- what the front end actually accepts, straight from the registry ---
+    data["requirements"] = as_rows()
+    data["support"] = summary()
+    data["planner_count"] = len(PLANNERS)
+    data["generator_count"] = len(GENERATORS)
+
+    print("  errands: soft goals under a metric")
+    errands = build_task(
+        os.path.join(root, "errands", "domain.pddl"),
+        os.path.join(root, "errands", "problem.pddl"),
+    )
+    errands_result = solve_task(errands, "astar", "hmax", time_limit=120)
+    data["errands"] = {
+        "cost": errands_result.cost,
+        "plan": [op.base_name for op in errands.visible_plan(errands_result.plan)],
+        "valid": validate_plan(errands, errands_result.plan),
+    }
+    print(f"    cost {errands_result.cost}: {data['errands']['plan']}")
+
+    print("  timed-market: waiting for opening time")
+    market = build_task(
+        os.path.join(root, "timed-market", "domain.pddl"),
+        os.path.join(root, "timed-market", "problem.pddl"),
+    )
+    market_result = solve_task(market, "astar", "hmax", time_limit=120)
+    data["market"] = {
+        "makespan": market.makespan(market_result.plan),
+        "work": sum(op.duration for op in market.visible_plan(market_result.plan)),
+        "plan": [op.base_name for op in market.visible_plan(market_result.plan)],
+    }
+    print(f"    makespan {data['market']['makespan']}")
     return data
 
 
@@ -433,17 +468,18 @@ def scene_rewrite(fig, t, data):
             )
 
     features = [
-        "hand-written PDDL parser + grounder",
-        "9 planners — BFS to A*, IDA*, enforced hill climbing",
+        "hand-written PDDL parser, grounder and compiler",
+        f"{data['planner_count']} planners — BFS to A*, IDA*, beam, novelty, anytime",
         "8 heuristics — goal-count to h_FF and LM-cut",
-        "typing, negative preconditions, conditional effects",
+        "ADL, axioms, numbers, time, constraints, preferences",
+        f"{data['generator_count']} seeded instance generators",
         "search instrumentation, plots and live dashboards",
     ]
     for i, feature in enumerate(features):
         alpha = fade_in(t, 0.42 + i * 0.075, 0.13)
         if alpha <= 0:
             continue
-        y = 0.44 - i * 0.075
+        y = 0.44 - i * 0.066
         text(fig, 0.085, y, "▸", size=20, color=BLUE, alpha=alpha)
         text(fig, 0.115, y, feature, size=23, color=INK, alpha=alpha)
 
@@ -1067,12 +1103,13 @@ def scene_plan(fig, t, data):
 
 
 def scene_web(fig, t, data, screenshot=None):
+    """The workbench, with the four things you can do in it."""
     fig.patch.set_facecolor(BG)
     text(
         fig,
         0.5,
-        0.90,
-        "Now it runs in your browser, too.",
+        0.945,
+        "A workbench, in your browser.",
         size=40,
         weight="bold",
         alpha=fade_in(t, 0.0, 0.13),
@@ -1081,35 +1118,38 @@ def scene_web(fig, t, data, screenshot=None):
     text(
         fig,
         0.5,
-        0.845,
+        0.893,
         "the same library, compiled to WebAssembly — nothing to install",
-        size=21,
+        size=20,
         color=DIM,
         alpha=fade_in(t, 0.09, 0.13),
         ha="center",
     )
 
     alpha = fade_in(t, 0.18, 0.18)
-    if alpha <= 0:
-        return
-    if screenshot is not None:
-        ax = fig.add_axes([0.13, 0.14, 0.74, 0.63])
-        ax.imshow(screenshot, alpha=min(1.0, alpha), aspect="auto")
-        ax.axis("off")
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-    else:
-        panel(fig, 0.13, 0.14, 0.74, 0.63, alpha=alpha)
-        text(
-            fig,
-            0.5,
-            0.45,
-            "jupyddl playground",
-            size=34,
-            color=DIM,
-            alpha=alpha,
-            ha="center",
-        )
+    if alpha > 0:
+        if screenshot is not None:
+            ax = fig.add_axes([0.10, 0.20, 0.80, 0.64])
+            ax.imshow(screenshot, alpha=min(1.0, alpha), aspect="auto")
+            ax.axis("off")
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+        else:
+            panel(fig, 0.10, 0.20, 0.80, 0.64, alpha=alpha)
+
+    views = [
+        ("solve", "watch a search run"),
+        ("experiment", "sweep a matrix, export CSV"),
+        ("PDDL support", "what is accepted, and how"),
+        ("generate", "reproducible instances"),
+    ]
+    for i, (name, note) in enumerate(views):
+        step = fade_in(t, 0.46 + i * 0.09, 0.13)
+        if step <= 0:
+            continue
+        x = 0.105 + i * 0.205
+        text(fig, x, 0.115, name, size=21, weight="bold", color=BLUE, alpha=step)
+        text(fig, x, 0.065, note, size=16, color=MUTED, alpha=step)
 
 
 def scene_cta(fig, t, data):
@@ -1184,16 +1224,404 @@ def scene_cta(fig, t, data):
     )
 
 
+SUPPORT_COLOURS = {
+    "native": "#0ca30c",
+    "compiled": BLUE,
+    "partial": YELLOW,
+    "rejected": "#4a4a4e",
+}
+
+
+def scene_requirements(fig, t, data):
+    """The PDDL support matrix, as 21 tiles that light up by support level."""
+    fig.patch.set_facecolor(BG)
+    counts = data["support"]
+    supported = counts["native"] + counts["compiled"] + counts["partial"]
+
+    text(
+        fig,
+        0.08,
+        0.89,
+        "How much PDDL, exactly?",
+        size=42,
+        weight="bold",
+        alpha=fade_in(t, 0.0, 0.12),
+    )
+    text(
+        fig,
+        0.08,
+        0.825,
+        "every requirement flag in the standard, and what this planner does with it",
+        size=20,
+        color=DIM,
+        alpha=fade_in(t, 0.07, 0.12),
+    )
+
+    rows = data["requirements"]
+    columns = 3
+    for i, row in enumerate(rows):
+        alpha = fade_in(t, 0.14 + i * 0.022, 0.10)
+        if alpha <= 0:
+            continue
+        column = i % columns
+        line = i // columns
+        x = 0.075 + column * 0.30
+        y = 0.715 - line * 0.078
+        colour = SUPPORT_COLOURS[row["support"]]
+        fig.patches.append(
+            FancyBboxPatch(
+                (x, y - 0.014),
+                0.012,
+                0.030,
+                boxstyle="round,pad=0,rounding_size=0.004",
+                transform=fig.transFigure,
+                facecolor=colour,
+                edgecolor="none",
+                alpha=alpha,
+                zorder=3,
+            )
+        )
+        muted = row["support"] == "rejected"
+        text(
+            fig,
+            x + 0.022,
+            y,
+            row["name"],
+            size=17,
+            color=MUTED if muted else INK,
+            alpha=alpha,
+            family="DejaVu Sans Mono",
+        )
+
+    alpha = fade_in(t, 0.66, 0.15)
+    if alpha > 0:
+        shown = count_up(supported, t, 0.68, 0.35)
+        text(
+            fig,
+            0.075,
+            0.145,
+            f"{shown}",
+            size=76,
+            weight="bold",
+            color=GOOD,
+            alpha=alpha,
+        )
+        text(fig, 0.205, 0.172, "of 21 supported", size=25, color=INK, alpha=alpha)
+        text(
+            fig,
+            0.205,
+            0.122,
+            f"{counts['native']} native · {counts['compiled']} compiled · "
+            f"{counts['partial']} partial",
+            size=17,
+            color=DIM,
+            alpha=alpha,
+        )
+
+    text(
+        fig,
+        0.52,
+        0.145,
+        "The one that is refused fails at parse time,",
+        size=19,
+        color=DIM,
+        alpha=fade_in(t, 0.80, 0.14),
+    )
+    text(
+        fig,
+        0.52,
+        0.105,
+        "by name. Silently ignoring a requirement",
+        size=19,
+        color=DIM,
+        alpha=fade_in(t, 0.83, 0.14),
+    )
+    text(
+        fig,
+        0.52,
+        0.065,
+        "gives you plans that are wrong, not absent.",
+        size=19,
+        color=ORANGE,
+        alpha=fade_in(t, 0.86, 0.14),
+    )
+
+
+def scene_pddl3(fig, t, data):
+    """Soft goals: the optimal plan deliberately skips an errand."""
+    fig.patch.set_facecolor(BG)
+    errands = data["errands"]
+
+    text(
+        fig,
+        0.08,
+        0.89,
+        "Tell it what you'd rather have.",
+        size=42,
+        weight="bold",
+        alpha=fade_in(t, 0.0, 0.12),
+    )
+    text(
+        fig,
+        0.08,
+        0.825,
+        "PDDL 3 preferences: soft goals, priced by the metric",
+        size=20,
+        color=DIM,
+        alpha=fade_in(t, 0.07, 0.12),
+    )
+
+    alpha = fade_in(t, 0.12, 0.14)
+    if alpha > 0:
+        panel(fig, 0.07, 0.44, 0.42, 0.31, alpha=alpha, color="#101012")
+        code = (
+            "(:goal (and (at-home) (locked)\n"
+            "   (preference milk   (bought-milk))\n"
+            "   (preference letter (posted-letter))))\n\n"
+            "(:metric minimize (+ (total-cost)\n"
+            "   (* 6 (is-violated milk))\n"
+            "   (* 2 (is-violated letter))))"
+        )
+        shown = typewriter(code, t, 0.16, 0.34)
+        if shown:
+            fig.text(
+                0.092,
+                0.715,
+                shown,
+                fontsize=16,
+                color="#dcdbd4",
+                va="top",
+                ha="left",
+                fontfamily="DejaVu Sans Mono",
+                linespacing=1.6,
+            )
+
+    # The verdict on each errand, straight from the solved plan.
+    entries = [
+        ("milk", "buy-milk", "worth 6, costs 1"),
+        ("bread", "buy-bread", "worth 6, costs 1"),
+        ("letter", "post-letter", "worth 2, costs 3"),
+    ]
+    for i, (label, action, economics) in enumerate(entries):
+        alpha = fade_in(t, 0.50 + i * 0.09, 0.13)
+        if alpha <= 0:
+            continue
+        y = 0.70 - i * 0.105
+        done = action in errands["plan"]
+        mark = "✔" if done else "✘"
+        colour = GOOD if done else ORANGE
+        text(fig, 0.56, y, mark, size=32, color=colour, alpha=alpha)
+        text(
+            fig, 0.60, y + 0.012, label, size=24, weight="bold", color=INK, alpha=alpha
+        )
+        text(fig, 0.60, y - 0.030, economics, size=16, color=MUTED, alpha=alpha)
+
+    alpha = fade_in(t, 0.79, 0.14)
+    if alpha > 0:
+        text(
+            fig,
+            0.08,
+            0.33,
+            "The optimal plan buys the milk and the bread —",
+            size=23,
+            color=INK,
+            alpha=alpha,
+        )
+        text(
+            fig,
+            0.08,
+            0.275,
+            "and deliberately skips the letter, paying the penalty.",
+            size=23,
+            color=INK,
+            alpha=fade_in(t, 0.82, 0.14),
+        )
+        text(
+            fig,
+            0.08,
+            0.195,
+            f"total cost {errands['cost']:g}, plan validated",
+            size=20,
+            color=GOOD,
+            alpha=fade_in(t, 0.87, 0.14),
+            family="DejaVu Sans Mono",
+        )
+        text(
+            fig,
+            0.08,
+            0.115,
+            "A planner that treated preferences as hard goals would post it.",
+            size=18,
+            color=DIM,
+            alpha=fade_in(t, 0.90, 0.13),
+            style="italic",
+        )
+
+
+def scene_time(fig, t, data):
+    """Timed initial literals: the world moves whether you do or not."""
+    fig.patch.set_facecolor(BG)
+    market = data["market"]
+
+    text(
+        fig,
+        0.08,
+        0.89,
+        "And the clock runs without you.",
+        size=42,
+        weight="bold",
+        alpha=fade_in(t, 0.0, 0.12),
+    )
+    text(
+        fig,
+        0.08,
+        0.825,
+        "timed initial literals: the market opens at 08:00 whatever you are doing",
+        size=20,
+        color=DIM,
+        alpha=fade_in(t, 0.07, 0.12),
+    )
+
+    # A timeline: bake, then idle, then sell.
+    alpha = fade_in(t, 0.16, 0.14)
+    if alpha > 0:
+        left, right, y = 0.10, 0.90, 0.55
+        span = right - left
+        end = market["makespan"] or 1
+        fig.add_artist(
+            plt.Line2D(
+                [left, right],
+                [y, y],
+                color="#3a3a3e",
+                linewidth=2,
+                transform=fig.transFigure,
+                alpha=alpha,
+                solid_capstyle="round",
+            )
+        )
+        progress = ease_in_out(min(1.0, max(0.0, (t - 0.20) / 0.45)))
+
+        def at(hour):
+            return left + span * (hour / end)
+
+        bars = [
+            (0.0, 3.0, BLUE, "bake", "3 hours of work"),
+            (3.0, 8.0, "#2a2a2e", "wait", "the market is shut"),
+            (8.0, 9.0, AQUA, "sell", "1 hour, once it opens"),
+        ]
+        for start_h, end_h, colour, label, note in bars:
+            visible_end = min(end_h, progress * end)
+            if visible_end <= start_h:
+                continue
+            x0, x1 = at(start_h), at(visible_end)
+            fig.patches.append(
+                FancyBboxPatch(
+                    (x0, y - 0.035),
+                    max(0.001, x1 - x0),
+                    0.07,
+                    boxstyle="round,pad=0,rounding_size=0.006",
+                    transform=fig.transFigure,
+                    facecolor=colour,
+                    edgecolor="none",
+                    alpha=alpha,
+                    zorder=3,
+                )
+            )
+            if progress * end >= end_h - 0.01:
+                mid = (at(start_h) + at(end_h)) / 2
+                text(
+                    fig,
+                    mid,
+                    y + 0.075,
+                    label,
+                    size=20,
+                    weight="bold",
+                    color=colour if colour != "#2a2a2e" else MUTED,
+                    alpha=alpha,
+                    ha="center",
+                )
+                text(
+                    fig,
+                    mid,
+                    y - 0.075,
+                    note,
+                    size=15,
+                    color=MUTED,
+                    alpha=alpha,
+                    ha="center",
+                )
+
+        for hour in (0, 3, 8, 9):
+            if progress * end >= hour - 0.01:
+                text(
+                    fig,
+                    at(hour),
+                    y - 0.125,
+                    f"{hour:02d}:00",
+                    size=14,
+                    color=MUTED,
+                    alpha=alpha,
+                    ha="center",
+                    family="DejaVu Sans Mono",
+                )
+
+    alpha = fade_in(t, 0.72, 0.14)
+    if alpha > 0:
+        text(
+            fig,
+            0.10,
+            0.30,
+            f"{market['work']:g}",
+            size=64,
+            weight="bold",
+            color=BLUE,
+            alpha=alpha,
+        )
+        text(fig, 0.10, 0.225, "hours of work", size=19, color=DIM, alpha=alpha)
+        text(
+            fig,
+            0.45,
+            0.30,
+            f"{market['makespan']:g}",
+            size=64,
+            weight="bold",
+            color=AQUA,
+            alpha=fade_in(t, 0.78, 0.14),
+        )
+        text(
+            fig,
+            0.45,
+            0.225,
+            "hours of makespan",
+            size=19,
+            color=DIM,
+            alpha=fade_in(t, 0.78, 0.14),
+        )
+        text(
+            fig,
+            0.10,
+            0.115,
+            "Waiting is a move, and the plan is scored for it.",
+            size=21,
+            color=INK,
+            alpha=fade_in(t, 0.85, 0.14),
+            style="italic",
+        )
+
+
 SCENES = [
     (scene_title, 4.5),
-    (scene_origin, 8.0),
+    (scene_origin, 7.5),
     (scene_rewrite, 8.5),
-    (scene_code, 6.5),
-    (scene_search, 13.0),
-    (scene_curves, 9.0),
-    (scene_showdown, 9.5),
-    (scene_plan, 7.0),
-    (scene_web, 5.5),
+    (scene_code, 6.0),
+    (scene_search, 12.0),
+    (scene_curves, 8.0),
+    (scene_showdown, 9.0),
+    (scene_requirements, 10.0),
+    (scene_pddl3, 11.0),
+    (scene_time, 9.5),
+    (scene_plan, 6.0),
+    (scene_web, 6.5),
     (scene_cta, 6.0),
 ]
 

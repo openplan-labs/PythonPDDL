@@ -7,7 +7,7 @@ classical-to-SOTA planners, heuristics, benchmarking — and a search you can
 actually *watch*. ✨
 
 **[▶ Open the workbench](https://apla-toolbox.github.io/PythonPDDL/)** ·
-[Watch the 75-second tour](promo/jupyddl-promo.mp4)
+[Watch the 105-second tour](promo/jupyddl-promo.mp4)
 
 </div>
 
@@ -253,7 +253,7 @@ Four views:
 
 <div align="center">
 
-<img src="promo/playground.png" alt="The jupyddl playground: a PDDL editor beside live cost-estimate charts, a radial search wavefront, and the resulting validated plan." width="880">
+<img src="promo/workbench-dark.png" alt="The jupyddl workbench: a PDDL editor beside live cost-estimate charts, a radial search wavefront, and the resulting validated plan." width="880">
 
 </div>
 
@@ -492,7 +492,7 @@ Regenerating the media:
 ```bash
 python tools/build_web.py                      # playground bundle
 python tools/make_promo.py -o promo/jupyddl-promo.mp4 \
-    --screenshot promo/playground.png          # the promo video
+    --screenshot promo/workbench-dark.png      # the promo video
 ```
 
 Every number in the promo video is measured at render time by running the real

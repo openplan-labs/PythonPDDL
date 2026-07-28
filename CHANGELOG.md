@@ -42,6 +42,10 @@ so the search engine is untouched.
   literals).
 
 ### Changed
+- The promo video is re-cut for what the library became: three new scenes cover
+  the 21-flag support matrix, the soft-goal trade-off in `errands` and the
+  timed-literal schedule in `timed-market`, and the browser scene now shows the
+  four-view workbench. Still 100% measured at render time.
 - `Task.makespan` replays the clock when a task has one. Waiting for a timed
   literal advances time without any action taking that long, so summing
   durations under-reported the end time.
