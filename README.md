@@ -37,9 +37,10 @@ is trivial to install, embed, teach with, and build on.
 ## Features 🌱
 
 - 🧩 **Hand-written PDDL parser** and grounder covering **STRIPS, full ADL,
-  derived predicates, numeric fluents and durative actions** — 15 of the 21
-  requirement flags, with the other 6 refused by name rather than ignored.
-  ([the full matrix](#pddl-support-))
+  derived predicates, numeric fluents, durative actions, trajectory
+  constraints, preferences, timed initial literals and object fluents** — 20 of
+  the 21 requirement flags, with the last one refused by name rather than
+  ignored. ([the full matrix](#pddl-support-))
 - 🔎 **14 planners**: BFS, DFS, Iterative Deepening, Dijkstra, Greedy Best-First,
   A*, Weighted A*, IDA*, Enforced Hill Climbing, hill climbing, beam search,
   Iterated Width, branch and bound, and anytime weighted A*.
@@ -294,6 +295,37 @@ ladder = [write_instance("gripper", "instances/", size=n, seed=1)
 purely random operators are almost always unsolvable, which makes for a useless
 benchmark. The test suite grounds and solves everything each generator emits.
 
+## Soft goals and trajectory constraints 🎯
+
+Preferences say what you would *rather* were true; constraints say what must
+hold along the whole trajectory. Both compile away before the search runs.
+
+```lisp
+(:constraints (and
+  (always (or (at-home) (has-keys)))      ; never leave without your keys
+  (sometime-before (locked) (at-home))))  ; you can only lock up from inside
+
+(:goal (and (at-home) (locked)
+            (preference milk   (bought-milk))
+            (preference letter (posted-letter))))
+
+(:metric minimize (+ (total-cost)
+                     (+ (* 6 (is-violated milk)) (* 2 (is-violated letter)))))
+```
+
+Milk is worth 6 and costs 1 to buy, so the optimal plan fetches it. The letter
+is worth 2 and costs 3 to post, so the optimal plan **skips it and pays the
+penalty** — which is the whole point of a soft goal, and something a planner
+that quietly treated preferences as hard goals would get wrong.
+
+Preferences become a priced choice behind a *closing* action that freezes the
+state, so a preference cannot be satisfied halfway through and then broken.
+`always` becomes a precondition on every action plus a goal conjunct; `sometime`
+and `sometime-before` use monitor facts the planner sets when it can;
+`sometime-after` and `at-most-once` use *forced* monitors on conditional
+effects, because a constraint the planner could satisfy by not looking would not
+be a constraint.
+
 ## Benchmarking 📈
 
 ```bash
@@ -328,6 +360,8 @@ and to make the difference between planners obvious:
 | `network` | **derived predicates**: recursive reachability axioms | 7 |
 | `numeric-transport` | **numeric fluents**: fuel burnt by driving, restored by refuelling | 11 |
 | `workshop` | **durative actions**: plans report a makespan | 33 |
+| `errands` | **preferences + constraints**: soft goals priced by a metric | 10 |
+| `timed-market` | **timed initial literals**: the plan waits for opening time | 4 |
 
 Most were produced by the generators, so `jupyddl generate` reproduces them
 exactly; `network` is hand-written because a recursive axiom is the point of it.
@@ -354,11 +388,12 @@ no heuristic at all — it prunes by *novelty* instead.
 
 ## PDDL support 🧾
 
-6 requirements are modelled natively, 6 are compiled into the
-core representation, 3 are supported with a documented restriction, and
-6 are **refused at parse time with an explanation** — never silently
-ignored, because a silently ignored requirement produces plans that are wrong
-rather than absent.
+**20 of the 21 requirement flags are supported.**
+6 are modelled natively, 7 are compiled into the core
+representation, and 7 are supported with a documented restriction.
+Exactly 1 is **refused at parse time with an explanation** — never
+silently ignored, because a silently ignored requirement produces plans that are
+wrong rather than absent.
 
 ```bash
 jupyddl requirements            # the table below, in your terminal
@@ -375,22 +410,34 @@ jupyddl requirements --verbose  # with the full compilation notes
 | `:typing` | 1.2 | **native** | Typed parameters and objects, with type hierarchies. Subtypes are resolved transitively when building the object pools. |
 | `:adl` | 1.2 | **compiled** | The full ADL feature set. |
 | `:disjunctive-preconditions` | 1.2 | **compiled** | `or` in preconditions and goals. Preconditions are converted to DNF; each disjunct becomes its own grounded operator. A disjunctive goal becomes a single artificial goal fact achieved by one zero-cost operator per disjunct. |
+| `:duration-inequalities` | 2.1 | **compiled** | Durations bounded by inequalities rather than fixed. Bounds are collected and the shortest feasible duration is chosen. With no concurrency and no continuous change nothing in the model prefers a longer action, so the tightest lower bound is makespan-optimal. Strict `<`/`>` are refused: they have no shortest feasible value. |
 | `:existential-preconditions` | 1.2 | **compiled** | `exists` in preconditions and goals. Expanded over the typed object pool into a disjunction, then handled like any other disjunction. |
 | `:negative-preconditions` | 1.2 | **compiled** | `not` in preconditions and goals. Compiled to positive normal form: each negated fluent gets a complement fact that every operator maintains. |
 | `:quantified-preconditions` | 1.2 | **compiled** | Both `exists` and `forall` in preconditions. |
 | `:universal-preconditions` | 1.2 | **compiled** | `forall` in preconditions and goals. Expanded over the typed object pool into a conjunction. |
+| `:constraints` | 3.0 | **partial** | State trajectory constraints. `always`, `at-end`, `sometime`, `sometime-before`, `sometime-after` and `at-most-once` are compiled into invariants on every action, monitor facts and extra goal conjuncts. The metric-time forms (`within`, `always-within`, `hold-after`, `hold-during`) are refused by name. |
 | `:durative-actions` | 2.1 | **partial** | `(:durative-action ...)` with timed conditions and effects. Compiled to sequential actions: at-start and over-all conditions become the precondition, at-start and at-end effects are merged, and the duration is carried through so plans report a makespan. Actions therefore never overlap — this models sequential temporal planning, not true concurrency, so a plan needing two actions to run at the same time will not be found. |
-| `:fluents` | 2.1 | **partial** | Numeric plus object fluents. Only the numeric half is implemented; object fluents are rejected. |
+| `:fluents` | 2.1 | **partial** | Numeric plus object fluents. Both halves are implemented; see the two rows above for what each one covers. |
 | `:numeric-fluents` | 2.1 | **partial** | Numeric state variables, comparisons and assignments. Supported: ground numeric fluents, comparisons (< <= = >= >) in preconditions and goals, and assign/increase/decrease/scale-up/scale-down effects over arithmetic expressions. Numeric values are part of the state, so the state space can become infinite — the delete-relaxation heuristics ignore numeric conditions, which keeps them admissible but uninformative about them. |
-| `:constraints` | 3.0 | **rejected** | State trajectory constraints (`always`, `sometime`, ...). Would need temporally-extended goal compilation. |
+| `:object-fluents` | 3.1 | **partial** | Functions returning objects rather than numbers. Compiled to a predicate plus a uniqueness rule: `(= (location ?p) ?x)` becomes a fact and `assign` clears the old value first. Using an object fluent as a *nested term* — `(at ?t (location ?p))` — is refused; write the equality form instead. |
+| `:preferences` | 3.0 | **partial** | Soft goals scored by a metric. Goal preferences are compiled into a priced choice: a closing action freezes the state, then each preference is resolved either for free (if it holds) or at its `(is-violated p)` weight, so cost-optimal search minimises the metric. Preferences over trajectory constraints or inside action preconditions are refused. |
+| `:timed-initial-literals` | 2.2 | **partial** | Facts that become true (or false) at a given absolute time. Elapsed time becomes a numeric fluent advanced by action durations. Each literal gets a firing action guarded on the clock plus a wait action that advances it, and every domain action is blocked while a due literal has not fired. Because actions never overlap, a literal scheduled strictly inside an action's duration fires immediately after that action rather than during it. |
 | `:continuous-effects` | 2.1 | **rejected** | Effects that change continuously over an action's duration. Requires continuous-time reasoning, which this planner does not do. |
-| `:duration-inequalities` | 2.1 | **rejected** | Durations constrained by inequalities rather than fixed. The sequential compilation needs a single duration per action. |
-| `:object-fluents` | 3.1 | **rejected** | Functions returning objects rather than numbers. Terms are assumed to be constants or variables throughout. |
-| `:preferences` | 3.0 | **rejected** | Soft goals scored by a metric. Parsed and refused rather than silently treated as hard goals, which would change which plans are considered valid. |
-| `:timed-initial-literals` | 2.2 | **rejected** | Facts that become true at a given absolute time. Needs a timeline the sequential compilation does not maintain. |
 
 The table is generated from `jupyddl.requirements`, which is the single source of
 truth: the parser, the CLI and the web workbench all read the same registry.
+Preferences, trajectory constraints, timed initial literals and object fluents
+are rewritten into the classical core by `jupyddl.compile` *before* grounding, so
+the search engine never learns they existed.
+
+### What is still missing
+
+`:continuous-effects` is refused, and **true temporal concurrency is not
+modelled**. Durative actions compile to a sequential schedule: they never
+overlap, so a plan that requires two actions to run at the same time will not be
+found. Fixing that properly needs a mutex-aware temporal scheduler
+(POPF-style), not another source-to-source compilation — it is the one gap here
+that is a project rather than a patch.
 
 ## Architecture 🏗️
 
@@ -398,6 +445,8 @@ truth: the parser, the CLI and the web workbench all read the same registry.
 jupyddl/
   requirements.py  what every PDDL requirement flag means here (source of truth)
   parser/          tokenizer + AST + recursive-descent parser (conditions in NNF)
+  compile.py       PDDL 3 -> classical core: preferences, constraints, timed
+                   literals, object fluents (all before grounding)
   grounding.py     Domain+Problem -> Task: quantifier expansion, DNF, PNF,
                    static pruning, axioms, numeric compilation
   task.py          grounded task, operators, numeric states, axioms, durations

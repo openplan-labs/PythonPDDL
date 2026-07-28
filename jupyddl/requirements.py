@@ -191,7 +191,8 @@ REQUIREMENTS = {
             "2.1",
             PARTIAL,
             "Numeric plus object fluents.",
-            "Only the numeric half is implemented; object fluents are rejected.",
+            "Both halves are implemented; see the two rows above for what each "
+            "one covers.",
             implies=(":numeric-fluents",),
         ),
         _r(
@@ -209,9 +210,13 @@ REQUIREMENTS = {
         _r(
             ":duration-inequalities",
             "2.1",
-            REJECTED,
-            "Durations constrained by inequalities rather than fixed.",
-            "The sequential compilation needs a single duration per action.",
+            COMPILED,
+            "Durations bounded by inequalities rather than fixed.",
+            "Bounds are collected and the shortest feasible duration is chosen. "
+            "With no concurrency and no continuous change nothing in the model "
+            "prefers a longer action, so the tightest lower bound is "
+            "makespan-optimal. Strict `<`/`>` are refused: they have no shortest "
+            "feasible value.",
         ),
         _r(
             ":continuous-effects",
@@ -223,31 +228,46 @@ REQUIREMENTS = {
         _r(
             ":timed-initial-literals",
             "2.2",
-            REJECTED,
-            "Facts that become true at a given absolute time.",
-            "Needs a timeline the sequential compilation does not maintain.",
+            PARTIAL,
+            "Facts that become true (or false) at a given absolute time.",
+            "Elapsed time becomes a numeric fluent advanced by action durations. "
+            "Each literal gets a firing action guarded on the clock plus a wait "
+            "action that advances it, and every domain action is blocked while a "
+            "due literal has not fired. Because actions never overlap, a literal "
+            "scheduled strictly inside an action's duration fires immediately "
+            "after that action rather than during it.",
         ),
         _r(
             ":preferences",
             "3.0",
-            REJECTED,
+            PARTIAL,
             "Soft goals scored by a metric.",
-            "Parsed and refused rather than silently treated as hard goals, "
-            "which would change which plans are considered valid.",
+            "Goal preferences are compiled into a priced choice: a closing "
+            "action freezes the state, then each preference is resolved either "
+            "for free (if it holds) or at its `(is-violated p)` weight, so "
+            "cost-optimal search minimises the metric. Preferences over "
+            "trajectory constraints or inside action preconditions are refused.",
         ),
         _r(
             ":constraints",
             "3.0",
-            REJECTED,
-            "State trajectory constraints (`always`, `sometime`, ...).",
-            "Would need temporally-extended goal compilation.",
+            PARTIAL,
+            "State trajectory constraints.",
+            "`always`, `at-end`, `sometime`, `sometime-before`, `sometime-after` "
+            "and `at-most-once` are compiled into invariants on every action, "
+            "monitor facts and extra goal conjuncts. The metric-time forms "
+            "(`within`, `always-within`, `hold-after`, `hold-during`) are "
+            "refused by name.",
         ),
         _r(
             ":object-fluents",
             "3.1",
-            REJECTED,
+            PARTIAL,
             "Functions returning objects rather than numbers.",
-            "Terms are assumed to be constants or variables throughout.",
+            "Compiled to a predicate plus a uniqueness rule: `(= (location ?p) "
+            "?x)` becomes a fact and `assign` clears the old value first. Using "
+            "an object fluent as a *nested term* — `(at ?t (location ?p))` — is "
+            "refused; write the equality form instead.",
         ),
     ]
 }

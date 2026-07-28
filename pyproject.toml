@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jupyddl"
-version = "2.1.0"
+version = "2.2.0"
 description = "A pure-Python PDDL planning framework: parser, grounding, classical-to-SOTA planners, heuristics and benchmarking."
 readme = "README.md"
 requires-python = ">=3.9"

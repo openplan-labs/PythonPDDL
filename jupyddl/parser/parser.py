@@ -16,6 +16,7 @@ from ..requirements import lookup as lookup_requirement
 from ..requirements import unsupported_reason
 from .ast import (
     Action,
+    Constraint,
     AddEffect,
     And,
     Arithmetic,
@@ -35,10 +36,13 @@ from .ast import (
     Literal,
     Number,
     NumericEffect,
+    ObjectFluent,
     Or,
+    Preference,
     PDDLError,
     Predicate,
     Problem,
+    TimedInitial,
     Truth,
     UnsupportedFeatureError,
     WhenEffect,
@@ -49,6 +53,19 @@ COMPARISONS = {"<", "<=", "=", ">=", ">"}
 ARITHMETIC = {"+", "-", "*", "/"}
 ASSIGN_OPS = {"assign", "increase", "decrease", "scale-up", "scale-down"}
 TOTAL_COST = "total-cost"
+
+# Trajectory-constraint operators. The first group is compiled by
+# jupyddl.compile; the second needs metric time, which the sequential model does
+# not maintain, so it is refused by name rather than approximated.
+CONSTRAINT_OPS = {
+    "always",
+    "sometime",
+    "at-end",
+    "at-most-once",
+    "sometime-before",
+    "sometime-after",
+}
+METRIC_TIME_OPS = {"within", "always-within", "hold-after", "hold-during"}
 
 # Timed-condition / timed-effect markers inside a durative action.
 TIME_SPECIFIERS = {"at", "over"}
@@ -256,6 +273,8 @@ def parse_domain(tokens: list) -> Domain:
     functions: list = []
     actions: list = []
     derived: list = []
+    constraints: list = []
+    object_fluents: list = []
 
     for section in tokens[1:]:
         key = _section_key(section)
@@ -274,30 +293,63 @@ def parse_domain(tokens: list) -> Domain:
             for pred in section[1:]:
                 predicates.append(Predicate(pred[0], _parse_typed_list(pred[1:])))
         elif key == ":functions":
-            functions.extend(_parse_functions(section[1:]))
+            numeric, objects = _parse_functions(section[1:])
+            functions.extend(numeric)
+            object_fluents.extend(objects)
         elif key == ":action":
             actions.append(_parse_action(section))
         elif key == ":durative-action":
             actions.append(_parse_durative_action(section))
         elif key == ":derived":
             derived.append(_parse_derived(section))
-        elif key in (":constraints",):
-            raise UnsupportedFeatureError(unsupported_reason(":constraints"))
+        elif key == ":constraints":
+            constraints.extend(_parse_constraints(section[1]))
     return Domain(
-        name, requirements, types, constants, predicates, actions, functions, derived
+        name,
+        requirements,
+        types,
+        constants,
+        predicates,
+        actions,
+        functions,
+        derived,
+        object_fluents,
+        constraints,
     )
 
 
-def _parse_functions(items) -> list:
-    """Parse a ``:functions`` block, ignoring the optional ``- number`` tail."""
-    functions = []
-    for entry in items:
-        if not isinstance(entry, list):
-            continue  # a bare '-' / 'number' type tail
-        if not entry or entry[0] == "-":
+def _parse_functions(items):
+    """Split a ``:functions`` block into numeric functions and object fluents.
+
+    A trailing ``- <type>`` applies to the functions declared before it. The
+    type ``number`` (or no type at all) means a numeric fluent; anything else
+    means the function returns an *object*, which is compiled away by
+    :mod:`jupyddl.compile`.
+
+    Returns ``(numeric, object_fluents)``.
+    """
+    numeric: list = []
+    object_fluents: list = []
+    pending: list = []
+    index = 0
+    while index < len(items):
+        entry = items[index]
+        if entry == "-":
+            result_type = items[index + 1]
+            index += 2
+            for name, params in pending:
+                if result_type == "number":
+                    numeric.append(Function(name, params))
+                else:
+                    object_fluents.append(ObjectFluent(name, params, result_type))
+            pending = []
             continue
-        functions.append(Function(entry[0], _parse_typed_list(entry[1:])))
-    return functions
+        if isinstance(entry, list) and entry:
+            pending.append((entry[0], _parse_typed_list(entry[1:])))
+        index += 1
+    # Anything left untyped defaults to a number, as PDDL specifies.
+    numeric.extend(Function(name, params) for name, params in pending)
+    return numeric, object_fluents
 
 
 def _parse_action(section: list) -> Action:
@@ -376,16 +428,78 @@ def _parse_durative_action(section: list) -> Action:
 
 
 def _parse_duration(expr, action_name: str):
-    """Read ``(= ?duration <expr>)``; inequalities are refused."""
-    if not isinstance(expr, list) or not expr:
+    """Read a ``:duration``, which may be an equality or a set of bounds.
+
+    ``(= ?duration 5)`` fixes it. ``(and (>= ?duration 2) (<= ?duration 6))``
+    bounds it, and the sequential compilation then picks the **shortest feasible
+    duration**: with no concurrency and no continuous change, nothing in the
+    model prefers a longer action, so the tightest lower bound is the
+    makespan-optimal choice. Strict inequalities are refused because they have
+    no shortest feasible value.
+    """
+    lower, upper, exact = _duration_bounds(expr, action_name)
+
+    if exact is not None:
+        if lower is not None and exact < lower:
+            raise PDDLError(f"duration bounds for '{action_name}' are contradictory")
+        if upper is not None and exact > upper:
+            raise PDDLError(f"duration bounds for '{action_name}' are contradictory")
+        return Number(exact)
+
+    chosen = lower if lower is not None else 0.0
+    if upper is not None and chosen > upper:
+        raise PDDLError(
+            f"duration bounds for '{action_name}' are contradictory: "
+            f"the lower bound {chosen:g} exceeds the upper bound {upper:g}"
+        )
+    if lower is None and upper is None:
         raise PDDLError(f"malformed :duration for '{action_name}'")
-    if expr[0] == "and":
-        if len(expr) == 2:
-            return _parse_duration(expr[1], action_name)
-        raise UnsupportedFeatureError(unsupported_reason(":duration-inequalities"))
-    if expr[0] != "=":
-        raise UnsupportedFeatureError(unsupported_reason(":duration-inequalities"))
-    return _parse_expression(expr[2])
+    return Number(chosen)
+
+
+def _duration_bounds(expr, action_name: str):
+    """Collect ``(lower, upper, exact)`` from a duration constraint tree."""
+    lower = upper = exact = None
+
+    def visit(node):
+        nonlocal lower, upper, exact
+        if not isinstance(node, list) or not node:
+            raise PDDLError(f"malformed :duration for '{action_name}'")
+        head = node[0]
+        if head == "and":
+            for sub in node[1:]:
+                visit(sub)
+            return
+        if head in ("<", ">"):
+            raise UnsupportedFeatureError(
+                f"strict duration inequality '{head}' in '{action_name}' is not "
+                "supported: it has no shortest feasible duration. Use >= or <=."
+            )
+        if head not in ("=", ">=", "<="):
+            raise PDDLError(
+                f"unexpected operator '{head}' in the :duration of '{action_name}'"
+            )
+        if len(node) != 3 or node[1] != "?duration":
+            raise UnsupportedFeatureError(
+                f"the :duration of '{action_name}' must constrain ?duration "
+                "against a constant"
+            )
+        value = _parse_expression(node[2])
+        if not isinstance(value, Number):
+            raise UnsupportedFeatureError(
+                f"the duration of '{action_name}' must be a constant; durations "
+                "that read numeric fluents are not supported"
+            )
+        amount = float(value.value)
+        if head == "=":
+            exact = amount
+        elif head == ">=":
+            lower = amount if lower is None else max(lower, amount)
+        else:
+            upper = amount if upper is None else min(upper, amount)
+
+    visit(expr)
+    return lower, upper, exact
 
 
 def _parse_derived(section: list) -> DerivedPredicate:
@@ -397,6 +511,123 @@ def _parse_derived(section: list) -> DerivedPredicate:
     head = Atom(head_expr[0], tuple(var for var, _ in params))
     body = parse_condition(section[2])
     return DerivedPredicate(head, params, body)
+
+
+def _parse_constraints(expr) -> list:
+    """Parse a ``(:constraints ...)`` body into :class:`Constraint` nodes."""
+    out: list = []
+
+    def visit(node):
+        if not isinstance(node, list) or not node:
+            return
+        head = node[0]
+        if head == "and":
+            for sub in node[1:]:
+                visit(sub)
+            return
+        if head == "forall":
+            # A quantified constraint expands once the object pool exists; the
+            # body is what carries the modality, so recurse into it and let the
+            # grounder expand the quantifier inside each operand.
+            params = tuple(_parse_typed_list(node[1]))
+            for constraint in _parse_constraints(node[2]):
+                out.append(
+                    Constraint(
+                        constraint.kind,
+                        tuple(Forall(params, arg) for arg in constraint.args),
+                    )
+                )
+            return
+        if head == "preference":
+            name = node[1]
+            for constraint in _parse_constraints(node[2]):
+                out.append(Preference(name, constraint))
+            return
+        if head in METRIC_TIME_OPS:
+            raise UnsupportedFeatureError(
+                f"the '{head}' constraint needs metric time, which the "
+                "sequential compilation does not maintain"
+            )
+        if head not in CONSTRAINT_OPS:
+            raise UnsupportedFeatureError(
+                f"'{head}' is not a recognised trajectory constraint; "
+                f"supported: {', '.join(sorted(CONSTRAINT_OPS))}"
+            )
+        arity = 2 if head in ("sometime-before", "sometime-after") else 1
+        operands = node[1 : 1 + arity]
+        if len(operands) != arity:
+            raise PDDLError(f"'{head}' takes {arity} operand(s): {node}")
+        out.append(Constraint(head, tuple(parse_condition(o) for o in operands)))
+
+    visit(expr)
+    return out
+
+
+def _split_preferences(expr, found: list):
+    """Strip ``(preference name phi)`` out of a goal, leaving the hard part.
+
+    Returns the goal s-expression with every preference replaced by ``()``
+    (trivially true) and appends the extracted ones to ``found``.
+    """
+    if not isinstance(expr, list) or not expr:
+        return expr
+    head = expr[0]
+    if head == "preference":
+        if len(expr) == 3:
+            found.append((expr[1], expr[2]))
+        elif len(expr) == 2:  # an unnamed preference
+            found.append((f"__pref{len(found) + 1}", expr[1]))
+        else:
+            raise PDDLError(f"malformed preference: {expr}")
+        return []
+    if head in ("and", "or", "not", "imply"):
+        return [head] + [_split_preferences(sub, found) for sub in expr[1:]]
+    if head in ("forall", "exists"):
+        return [head, expr[1], _split_preferences(expr[2], found)]
+    return expr
+
+
+def _parse_timed_initial(fact):
+    """Parse ``(at <time> <literal>)`` from ``:init``; None when it is an atom.
+
+    ``(at 5 (on a b))`` is a timed initial literal, but ``(at truck1 depot)`` is
+    an ordinary atom about location -- the number in the second position is what
+    distinguishes them.
+    """
+    if len(fact) != 3 or fact[0] != "at" or not _is_number(fact[1]):
+        return None
+    body = fact[2]
+    if not isinstance(body, list) or not body:
+        raise PDDLError(f"malformed timed initial literal: {fact}")
+    if body[0] == "not":
+        return TimedInitial(float(fact[1]), Literal(_parse_atom(body[1]), False))
+    return TimedInitial(float(fact[1]), Literal(_parse_atom(body), True))
+
+
+def _collect_violation_weights(expression, weights: dict, factor: float = 1.0):
+    """Read the ``(is-violated p)`` coefficients out of a metric expression.
+
+    ``(+ (total-cost) (* 4 (is-violated p)))`` prices preference ``p`` at 4.
+    Anything not of that shape is ignored; the default weight is 1.
+    """
+    if isinstance(expression, FluentRef):
+        if expression.name == "is-violated" and expression.args:
+            name = expression.args[0]
+            weights[name] = weights.get(name, 0.0) + factor
+        return
+    if isinstance(expression, Arithmetic):
+        if expression.op == "+":
+            _collect_violation_weights(expression.left, weights, factor)
+            _collect_violation_weights(expression.right, weights, factor)
+        elif expression.op == "-":
+            _collect_violation_weights(expression.left, weights, factor)
+            _collect_violation_weights(expression.right, weights, -factor)
+        elif expression.op == "*":
+            left, right = expression.left, expression.right
+            if isinstance(left, Number):
+                _collect_violation_weights(right, weights, factor * left.value)
+            elif isinstance(right, Number):
+                _collect_violation_weights(left, weights, factor * right.value)
 
 
 def parse_problem(tokens: list) -> Problem:
@@ -411,6 +642,11 @@ def parse_problem(tokens: list) -> Problem:
     goal = Truth(True)
     metric = None
     metric_minimize_cost = False
+    preferences: list = []
+    constraints: list = []
+    timed_initials: list = []
+    init_objects: dict = {}
+    violation_weights: dict = {}
 
     for section in tokens[1:]:
         key = _section_key(section)
@@ -429,16 +665,29 @@ def parse_problem(tokens: list) -> Problem:
                 if fact[0] == "=":
                     target, value = fact[1], fact[2]
                     fluent = _parse_expression(target)
-                    if isinstance(fluent, FluentRef) and _is_number(value):
+                    if not isinstance(fluent, FluentRef):
+                        continue
+                    if _is_number(value):
                         init_numeric[fluent] = float(value)
+                    elif not isinstance(value, list):
+                        # `(= (location p1) depot)` assigns an object, not a
+                        # number: an object fluent, compiled away later.
+                        init_objects[fluent] = value
+                    continue
+                timed = _parse_timed_initial(fact)
+                if timed is not None:
+                    timed_initials.append(timed)
                     continue
                 init.append(_parse_atom(fact))
         elif key == ":goal":
-            goal = parse_condition(section[1])
+            stripped = _split_preferences(section[1], preferences)
+            goal = parse_condition(stripped)
         elif key == ":metric":
             metric, metric_minimize_cost = _parse_metric(section)
+            if metric is not None:
+                _collect_violation_weights(metric[1], violation_weights)
         elif key == ":constraints":
-            raise UnsupportedFeatureError(unsupported_reason(":constraints"))
+            constraints.extend(_parse_constraints(section[1]))
     return Problem(
         name,
         domain_name,
@@ -448,6 +697,14 @@ def parse_problem(tokens: list) -> Problem:
         metric_minimize_cost,
         init_numeric,
         metric,
+        [
+            Preference(pref_name, parse_condition(body))
+            for pref_name, body in preferences
+        ],
+        constraints,
+        timed_initials,
+        init_objects,
+        violation_weights,
     )
 
 

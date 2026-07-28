@@ -108,6 +108,20 @@ DEMO_ORDER = [
         ("astar", "lmcut"),
     ),
     (
+        "errands",
+        "Errands (PDDL 3)",
+        "Soft goals priced by a metric, plus always/sometime-before constraints.",
+        ["preferences", "constraints", "adl"],
+        ("astar", "hmax"),
+    ),
+    (
+        "timed-market",
+        "Market day (timed literals)",
+        "The market opens at 08:00 whatever you are doing; the plan waits for it.",
+        ["timed-initial-literals", "durative-actions"],
+        ("astar", "hmax"),
+    ),
+    (
         "blocksworld12",
         "Blocksworld 12 (hard)",
         "Twelve blocks. Satisficing planners walk it; optimal planners struggle.",

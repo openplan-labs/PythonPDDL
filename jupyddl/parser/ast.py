@@ -245,6 +245,8 @@ class Domain:
     actions: list
     functions: list = field(default_factory=list)
     derived: list = field(default_factory=list)
+    object_fluents: list = field(default_factory=list)
+    constraints: list = field(default_factory=list)
 
     @property
     def has_durative_actions(self) -> bool:
@@ -261,3 +263,58 @@ class Problem:
     metric_minimize_cost: bool = False
     init_numeric: dict = field(default_factory=dict)  # FluentRef -> float
     metric: object = None  # (direction, expression) or None
+    preferences: list = field(default_factory=list)  # [Preference, ...]
+    constraints: list = field(default_factory=list)  # [Constraint | Preference]
+    timed_initials: list = field(default_factory=list)  # [TimedInitial, ...]
+    init_objects: dict = field(default_factory=dict)  # object-fluent assignments
+    violation_weights: dict = field(default_factory=dict)  # preference -> weight
+
+
+# --- PDDL 3: preferences and trajectory constraints --------------------------
+
+
+@dataclass(frozen=True)
+class Preference:
+    """A named soft goal or soft constraint.
+
+    ``body`` is either a condition formula (a goal preference) or a
+    :class:`Constraint` (a soft trajectory constraint). Violating it is legal;
+    the ``:metric`` says what it costs.
+    """
+
+    name: str
+    body: object
+
+
+@dataclass(frozen=True)
+class Constraint:
+    """One state-trajectory constraint from a ``(:constraints ...)`` block.
+
+    ``kind`` is the PDDL modal operator (``always``, ``sometime``, ``at-end``,
+    ``at-most-once``, ``sometime-before``, ``sometime-after``) and ``args`` holds
+    its operand formulas, already in negation normal form.
+    """
+
+    kind: str
+    args: tuple = ()
+
+
+@dataclass(frozen=True)
+class TimedInitial:
+    """A ``(at <time> <literal>)`` entry in ``:init``.
+
+    The literal becomes true (or false, when negated) once the clock reaches
+    ``time``, whatever the planner is doing.
+    """
+
+    time: float
+    literal: Literal
+
+
+@dataclass(frozen=True)
+class ObjectFluent:
+    """A declared function whose value is an object rather than a number."""
+
+    name: str
+    params: list
+    result_type: str

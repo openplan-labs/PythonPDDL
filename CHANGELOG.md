@@ -4,6 +4,57 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-28
+
+Closes the PDDL gap: 20 of the 21 requirement flags are now supported, up from
+15. Everything new is a source-to-source compilation applied before grounding,
+so the search engine is untouched.
+
+### Added
+- **`jupyddl.compile`**: PDDL 3 constructs are rewritten into the classical core
+  before grounding. Every fact and action it invents is prefixed `__` and hidden
+  from printed plans.
+- **`:constraints`** — `always`, `at-end`, `sometime`, `sometime-before`,
+  `sometime-after` and `at-most-once`. `always` becomes a precondition on every
+  action plus a goal conjunct (the three checks between them cover every state
+  on a trajectory). `sometime`/`sometime-before` use optional monitor actions;
+  `sometime-after`/`at-most-once` use *forced* monitors on conditional effects,
+  because a constraint the planner could satisfy by not looking would not be a
+  constraint. The metric-time forms (`within`, `hold-during`, ...) are refused
+  by name.
+- **`:preferences`** — goal preferences become a priced choice: a closing action
+  freezes the state, then each preference is resolved for free if it holds or at
+  its `(is-violated p)` weight if not, so plain cost-optimal search minimises the
+  metric. Freezing first is what stops a preference being satisfied halfway
+  through and then broken. Soft trajectory constraints are refused.
+- **`:timed-initial-literals`** — elapsed time becomes a numeric fluent advanced
+  by action durations, with a firing action per literal, a wait action that
+  advances the clock, guards that stop anything else happening while a due
+  literal has not fired, and an ordering constraint so literals fire in time
+  order.
+- **`:object-fluents`** — compiled to a predicate plus a uniqueness rule;
+  `assign` clears the old value first so the function stays single-valued.
+  Nested-term use is refused in favour of the equality form.
+- **`:duration-inequalities`** — bounds are collected and the shortest feasible
+  duration chosen, which is makespan-optimal with no concurrency. Strict
+  `<`/`>` are refused: they have no shortest feasible value.
+- New demos: `errands` (preferences + constraints) and `timed-market` (timed
+  literals).
+
+### Changed
+- `Task.makespan` replays the clock when a task has one. Waiting for a timed
+  literal advances time without any action taking that long, so summing
+  durations under-reported the end time.
+- `:fluents` now genuinely covers both halves; `:preferences`, `:constraints`,
+  `:timed-initial-literals`, `:object-fluents` and `:duration-inequalities`
+  moved off the rejected list.
+
+### Still not supported
+- `:continuous-effects`, and **true temporal concurrency**. Durative actions
+  compile to a sequential schedule and never overlap, so a plan needing two
+  actions to run at once will not be found. That needs a mutex-aware temporal
+  scheduler rather than another compilation.
+
 ## [2.1.0] - 2026-07-28
 
 Grows the PDDL fragment from STRIPS to most of PDDL 3.1, and turns the browser

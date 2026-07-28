@@ -51,7 +51,17 @@ DEMO_OPTIMAL_COST = {
     "logistics": 24,
     "sokoban": 11,
     "elevator": 14,
+    "rovers": 11,
+    "network": 7,
+    "numeric-transport": 11,
+    "workshop": 33,
+    "errands": 10,
+    "timed-market": 4,
 }
+
+# Instances an optimal planner cannot finish in reasonable time; the test suite
+# checks these with a satisficing planner instead.
+SATISFICING_ONLY = {"blocksworld12"}
 
 
 def demo_paths(name: str):

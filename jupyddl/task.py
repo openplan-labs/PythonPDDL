@@ -146,6 +146,11 @@ class Task:
     init_values: tuple = ()
     goal_numeric: tuple = ()  # callables values -> bool
     temporal: bool = False
+    # Index of the elapsed-time fluent, when a timed-initial-literal
+    # compilation introduced one. Waiting for a timed literal advances the clock
+    # without any action taking that long, so a plan's real end time is the
+    # clock, not the sum of its durations.
+    clock_index: Optional[int] = None
     metric: Optional[str] = None
     requirements: tuple = ()
     # Operators introduced purely by a compilation step (a disjunctive goal,
@@ -211,8 +216,20 @@ class Task:
         return "{" + ", ".join(sorted(self.facts[f] for f in facts_of(state))) + "}"
 
     def makespan(self, plan) -> float:
-        """Total duration of a plan under the sequential temporal compilation."""
-        return sum(op.duration for op in plan or ())
+        """When the plan finishes, under the sequential temporal compilation.
+
+        Normally that is the sum of the action durations. If the task has a
+        clock — because timed initial literals made one necessary — the plan may
+        also have *waited*, so the clock is replayed instead: idle time counts
+        towards the end time even though no action was running.
+        """
+        plan = list(plan or ())
+        if self.clock_index is None:
+            return sum(op.duration for op in plan)
+        state = self.initial_state()
+        for operator in plan:
+            state = self.apply(operator, state)
+        return float(values_of(state)[self.clock_index])
 
     def visible_plan(self, plan) -> list:
         """Drop operators that only exist because of a compilation step."""

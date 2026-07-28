@@ -11,10 +11,11 @@ import os
 
 import pytest
 
-from conftest import DEMO_OPTIMAL_COST, DEMOS, demo_paths
+from conftest import DEMO_OPTIMAL_COST, DEMOS, SATISFICING_ONLY, demo_paths
 from jupyddl import build_task, solve_task, validate_plan
 
 DEMO_NAMES = sorted(DEMO_OPTIMAL_COST)
+ALL_DEMOS = sorted(set(DEMO_NAMES) | SATISFICING_ONLY)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -23,7 +24,7 @@ def demos_available():
         pytest.skip("demos folder is missing")
 
 
-@pytest.mark.parametrize("name", DEMO_NAMES)
+@pytest.mark.parametrize("name", ALL_DEMOS)
 def test_demo_grounds(name):
     task = build_task(*demo_paths(name))
     assert task.num_facts > 0
@@ -33,22 +34,27 @@ def test_demo_grounds(name):
 
 @pytest.mark.parametrize("name", DEMO_NAMES)
 def test_demo_is_solved_optimally(name):
-    """A* with an admissible heuristic must hit the known optimal cost."""
+    """A* with an admissible heuristic must hit the known optimal cost.
+
+    `hmax` rather than `lmcut` here: LM-cut is not admissible on the demos with
+    conditional effects, and the PDDL 3 compilations lean on those heavily.
+    """
     task = build_task(*demo_paths(name))
-    result = solve_task(task, "astar", "lmcut")
+    result = solve_task(task, "astar", "hmax", time_limit=120)
     assert result.solved
     assert validate_plan(task, result.plan)
     assert result.cost == DEMO_OPTIMAL_COST[name]
 
 
-@pytest.mark.parametrize("name", DEMO_NAMES)
+@pytest.mark.parametrize("name", ALL_DEMOS)
 def test_satisficing_planner_finds_a_valid_plan(name):
     task = build_task(*demo_paths(name))
-    result = solve_task(task, "gbfs", "hff")
+    result = solve_task(task, "gbfs", "hff", time_limit=60)
     assert result.solved
     assert validate_plan(task, result.plan)
-    # Greedy search may be suboptimal, but never cheaper than optimal.
-    assert result.cost >= DEMO_OPTIMAL_COST[name]
+    if name in DEMO_OPTIMAL_COST:
+        # Greedy search may be suboptimal, but never cheaper than optimal.
+        assert result.cost >= DEMO_OPTIMAL_COST[name]
 
 
 def test_hanoi_matches_the_closed_form():
@@ -88,3 +94,31 @@ def test_sokoban_static_predicates_are_pruned():
     """`move-dir` never appears in an effect, so it must not survive grounding."""
     task = build_task(*demo_paths("sokoban"))
     assert not any("move-dir" in fact for fact in task.facts)
+
+
+def test_errands_buys_what_is_worth_buying():
+    """The metric prices milk and bread above their cost, and the letter below.
+
+    A planner that treated preferences as hard goals would post the letter too;
+    one that ignored them would buy nothing. The optimal plan does neither.
+    """
+    task = build_task(*demo_paths("errands"))
+    result = solve_task(task, "astar", "hmax", time_limit=120)
+    assert result.solved and validate_plan(task, result.plan)
+    plan = [op.base_name for op in task.visible_plan(result.plan)]
+    assert "buy-milk" in plan and "buy-bread" in plan
+    assert "post-letter" not in plan, "posting costs 3 but is only worth 2"
+    # The keys constraint must have been respected before stepping outside.
+    assert plan.index("take-keys") < plan.index("go-out")
+
+
+def test_timed_market_waits_for_the_market_to_open():
+    task = build_task(*demo_paths("timed-market"))
+    result = solve_task(task, "astar", "hmax", time_limit=120)
+    assert result.solved and validate_plan(task, result.plan)
+    # Baking takes 3 and selling 1, but the market opens at 8: the plan idles.
+    assert task.makespan(result.plan) == 9.0
+    assert [op.base_name for op in task.visible_plan(result.plan)] == [
+        "bake(bread)",
+        "sell(bread)",
+    ]

@@ -29,6 +29,10 @@ native build step, and the core has zero runtime dependencies.
 - `jupyddl/requirements.py` — **the source of truth** for what every PDDL
   requirement flag does here. Change support for a feature *here first*; the
   parser, the CLI, the README table and the web UI all read it.
+- `jupyddl/compile.py` — PDDL 3 (preferences, trajectory constraints, timed
+  initial literals, object fluents) rewritten into the classical core **before**
+  grounding. Add front-end features here as source-to-source transformations,
+  not as special cases in the grounder or the search.
 - `jupyddl/generator.py` — reproducible instance generators.
 - `jupyddl/trace.py` — search observers, events, `SearchTrace` (JSON).
 - `jupyddl/live.py` — the terminal dashboard; **stdlib only, keep it that way**,
@@ -47,6 +51,19 @@ expanding them needs the object pool; `grounding._dnf` expands them and
 distributes to DNF, and each disjunct becomes its own operator (named
 `action(args)#N`). `Operator.base_name` strips that tag for display.
 
+### The PDDL 3 compilations
+Everything `compile.py` introduces is named with a leading `__`, and grounding
+collects those into `Task.synthetic` so `Task.visible_plan` can hide them. Two
+traps worth knowing:
+
+- **Synthetic actions must declare a zero cost.** Grounding charges 1 for any
+  action with no cost effect, which silently inflates the metric — closing a
+  plan or observing a constraint is bookkeeping, not work.
+- **Forced vs optional monitors.** `sometime` can use an action the planner
+  applies when convenient; `at-most-once` and `sometime-after` cannot, because
+  the planner would simply decline to notice. Those ride on conditional effects
+  added to every domain action.
+
 ### Optional task layers
 `Task` carries three layers that are inert unless the domain uses them, and the
 planners must go through the task rather than the operator to honour them:
@@ -57,7 +74,9 @@ planners must go through the task rather than the operator to honour them:
 - **numeric fluents** — the state becomes a `State(facts, values)` instead of a
   frozenset. Anything doing `set(state)` still works (`State` is iterable); use
   `facts_of(state)` when you need the fact set specifically.
-- **durations** — `op.duration` plus `Task.makespan(plan)`.
+- **durations** — `op.duration` plus `Task.makespan(plan)`. When timed initial
+  literals introduced a clock, `makespan` replays it instead of summing
+  durations: waiting advances time without any action taking that long.
 
 ### Non-obvious notes
 - **Instrumentation must stay transparent.** Planners only touch the observer

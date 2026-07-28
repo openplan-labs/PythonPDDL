@@ -53,6 +53,8 @@ from .parser.ast import (
     UnsupportedFeatureError,
     WhenEffect,
 )
+from .compile import CLOCK as CLOCK_FLUENT
+from .compile import SYNTHETIC_PREFIX, compile_problem
 from .parser.parser import parse_domain_file, parse_problem_file
 from .task import Axiom, CondEffect, Operator, Task
 
@@ -542,6 +544,11 @@ def _ground_axioms(domain: Domain, type_objects: dict) -> list:
 
 def ground(domain: Domain, problem: Problem) -> Task:
     """Ground ``domain`` + ``problem`` into a :class:`Task`."""
+    # PDDL 3 constructs (preferences, trajectory constraints, timed literals,
+    # object fluents) are rewritten into the classical core first, so nothing
+    # below this line has to know they exist.
+    requirements = tuple(domain.requirements)
+    domain, problem = compile_problem(domain, problem)
     type_objects = _build_type_objects(domain, problem)
     init_atoms = set(problem.init)
 
@@ -738,7 +745,13 @@ def ground(domain: Domain, problem: Problem) -> Task:
         for head, body_pos, body_neg in resolved_axioms
     )
 
+    # Anything a compilation introduced is bookkeeping, not something the
+    # domain author wrote, so keep it out of printed plans.
+    synthetic |= {
+        op.name for op in operators if op.base_name.startswith(SYNTHETIC_PREFIX)
+    }
     temporal = any(op.duration for op in operators)
+    clock_index = index_of.get(CLOCK_FLUENT)
     metric = None
     if problem.metric is not None:
         direction, expression = problem.metric
@@ -756,8 +769,9 @@ def ground(domain: Domain, problem: Problem) -> Task:
         init_values=init_values,
         goal_numeric=goal_numeric,
         temporal=temporal,
+        clock_index=clock_index,
         metric=metric,
-        requirements=tuple(domain.requirements),
+        requirements=requirements,
         synthetic=frozenset(synthetic),
     )
 

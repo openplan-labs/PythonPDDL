@@ -55,8 +55,12 @@ def test_lookup_tolerates_a_missing_colon():
 
 
 def test_rejected_flags_are_not_supported():
-    assert not supported(":preferences")
+    # `:continuous-effects` is the one flag that stays refused: it needs
+    # continuous-time reasoning, which no compilation into a discrete state
+    # space can honestly provide.
+    assert not supported(":continuous-effects")
     assert supported(":derived-predicates")
+    assert supported(":preferences")
 
 
 def test_unknown_requirement_is_rejected_at_parse_time():
@@ -64,13 +68,25 @@ def test_unknown_requirement_is_rejected_at_parse_time():
         parse("(define (domain d) (:requirements :teleportation) (:predicates (p)))")
 
 
-@pytest.mark.parametrize(
-    "flag", [":preferences", ":constraints", ":timed-initial-literals"]
-)
+@pytest.mark.parametrize("flag", [":continuous-effects"])
 def test_unsupported_flags_fail_loudly(flag):
     """Silently ignoring a requirement would produce confidently wrong plans."""
     with pytest.raises(UnsupportedFeatureError):
         parse(f"(define (domain d) (:requirements :strips {flag}) (:predicates (p)))")
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        ":preferences",
+        ":constraints",
+        ":timed-initial-literals",
+        ":duration-inequalities",
+        ":object-fluents",
+    ],
+)
+def test_formerly_rejected_flags_are_now_accepted(flag):
+    parse(f"(define (domain d) (:requirements :strips {flag}) (:predicates (p)))")
 
 
 # ==========================================================================
@@ -403,12 +419,24 @@ def test_makespan_is_sequential_across_independent_actions():
     assert task.makespan(result.plan) == 16.0
 
 
-def test_duration_inequalities_are_rejected():
-    with pytest.raises(UnsupportedFeatureError):
+def test_bounded_duration_takes_the_shortest_feasible_value():
+    domain = parse(
+        "(define (domain d) (:requirements :durative-actions :duration-inequalities)"
+        " (:predicates (p))"
+        " (:durative-action a :parameters ()"
+        "  :duration (and (>= ?duration 2) (<= ?duration 9))"
+        "  :condition (and) :effect (and (at end (p)))))"
+    )
+    assert domain.actions[0].duration.value == 2.0
+
+
+def test_strict_duration_inequality_is_rejected():
+    """`> 2` has no shortest feasible duration, so there is nothing to pick."""
+    with pytest.raises(UnsupportedFeatureError, match="strict duration"):
         parse(
-            "(define (domain d) (:requirements :durative-actions)"
-            " (:predicates (p))"
-            " (:durative-action a :parameters () :duration (and (>= ?duration 2))"
+            "(define (domain d) (:requirements :durative-actions"
+            " :duration-inequalities) (:predicates (p))"
+            " (:durative-action a :parameters () :duration (> ?duration 2)"
             "  :condition (and) :effect (and (at end (p)))))"
         )
 
