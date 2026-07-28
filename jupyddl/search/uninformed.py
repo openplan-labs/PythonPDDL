@@ -16,22 +16,25 @@ class BreadthFirstSearch(Planner):
     name = "bfs"
     optimal = True  # for unit-cost / plan-length
 
-    def search(self, task, heuristic=None, observer=None) -> SearchResult:
+    def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
         stats = SearchStats()
         start = time.perf_counter()
         if observer is not None:
             observer.on_start(task, self.name, "")
-        root = make_root(task.init)
-        if task.goal_reached(task.init):
+        start_state = task.initial_state()
+        root = make_root(start_state)
+        if task.goal_reached(start_state):
             stats.runtime = time.perf_counter() - start
             result = SearchResult(True, [], 0, stats)
             if observer is not None:
-                observer.on_goal(task.init, 0, 0, stats)
+                observer.on_goal(start_state, 0, 0, stats)
                 observer.on_finish(result)
             return result
-        visited = {task.init}
+        visited = {start_state}
         queue = deque([root])
         while queue:
+            if budget is not None and budget.exceeded(stats):
+                break
             node = queue.popleft()
             stats.expanded += 1
             if observer is not None:
@@ -46,7 +49,7 @@ class BreadthFirstSearch(Planner):
                     action="" if node.action is None else node.action.name,
                 )
             for op in task.applicable_operators(node.state):
-                succ = op.apply(node.state)
+                succ = task.apply(op, node.state)
                 stats.generated += 1
                 if succ in visited:
                     continue
@@ -81,15 +84,18 @@ class DepthFirstSearch(Planner):
 
     name = "dfs"
 
-    def search(self, task, heuristic=None, observer=None) -> SearchResult:
+    def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
         stats = SearchStats()
         start = time.perf_counter()
         if observer is not None:
             observer.on_start(task, self.name, "")
-        root = make_root(task.init)
-        visited = {task.init}
+        start_state = task.initial_state()
+        root = make_root(start_state)
+        visited = {start_state}
         stack = [root]
         while stack:
+            if budget is not None and budget.exceeded(stats):
+                break
             node = stack.pop()
             if task.goal_reached(node.state):
                 stats.runtime = time.perf_counter() - start
@@ -111,7 +117,7 @@ class DepthFirstSearch(Planner):
                     action="" if node.action is None else node.action.name,
                 )
             for op in task.applicable_operators(node.state):
-                succ = op.apply(node.state)
+                succ = task.apply(op, node.state)
                 stats.generated += 1
                 if succ in visited:
                     continue
@@ -143,16 +149,17 @@ class IterativeDeepeningSearch(Planner):
     def __init__(self, max_depth: int = 1000):
         self.max_depth = max_depth
 
-    def search(self, task, heuristic=None, observer=None) -> SearchResult:
+    def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
         stats = SearchStats()
         start = time.perf_counter()
         if observer is not None:
             observer.on_start(task, self.name, "")
+        start_state = task.initial_state()
         for limit in range(self.max_depth + 1):
             if observer is not None:
                 observer.on_bound(float(limit), limit, stats)
             found, cutoff = self._dls(
-                task, make_root(task.init), limit, stats, {task.init}, observer
+                task, make_root(start_state), limit, stats, {start_state}, observer
             )
             if found is not None:
                 stats.runtime = time.perf_counter() - start
@@ -188,7 +195,7 @@ class IterativeDeepeningSearch(Planner):
             )
         cutoff = False
         for op in task.applicable_operators(node.state):
-            succ = op.apply(node.state)
+            succ = task.apply(op, node.state)
             stats.generated += 1
             if succ in on_path:
                 continue

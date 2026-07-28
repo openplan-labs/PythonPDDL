@@ -78,4 +78,9 @@ def test_all_planner_names_registered():
         "wastar",
         "idastar",
         "ehc",
+        "hc",
+        "beam",
+        "iw",
+        "bnb",
+        "awastar",
     }

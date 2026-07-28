@@ -1,10 +1,15 @@
-"""Structured AST for the supported subset of PDDL.
+"""Structured AST for PDDL.
 
-The subset covered: ``:strips``, ``:typing``, ``:negative-preconditions``,
-``:equality``, ``:action-costs`` (via ``(increase (total-cost) k)``), and the
-ADL constructs ``forall``/``when`` inside effects (needed by e.g. the *flip*
-domain). Numeric fluents other than ``total-cost`` are intentionally not
-modelled and are rejected by the parser with a clear error.
+Conditions are stored as a **formula tree in negation normal form**: the parser
+pushes every ``not`` down to the atoms and rewrites ``imply``, so the grounder
+only ever sees negation applied to a literal. Quantifiers stay in the tree
+because expanding them needs the object pool, which only exists at grounding
+time; the grounder then distributes the formula into DNF and emits one operator
+per disjunct.
+
+Numeric fluents and durative actions have their own small node types. See
+:mod:`jupyddl.requirements` for exactly which PDDL requirement flags are
+supported and how.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ class Atom:
     """
 
     predicate: str
-    args: tuple[str, ...] = ()
+    args: tuple = ()
 
     def __str__(self) -> str:
         if not self.args:
@@ -54,26 +59,96 @@ class EqualityConstraint:
     positive: bool = True
 
 
-@dataclass
-class Condition:
-    """A conjunction of literals plus (in)equality constraints.
+# --- numeric expressions -----------------------------------------------------
 
-    All supported preconditions/goals/effect-conditions are conjunctive; the
-    parser flattens nested ``and`` and rejects unsupported connectives.
+
+@dataclass(frozen=True)
+class Number:
+    """A numeric literal."""
+
+    value: float
+
+
+@dataclass(frozen=True)
+class FluentRef:
+    """A reference to a numeric fluent, e.g. ``(fuel ?truck)``."""
+
+    name: str
+    args: tuple = ()
+
+    def __str__(self) -> str:
+        if not self.args:
+            return f"({self.name})"
+        return f"({self.name} {' '.join(self.args)})"
+
+
+@dataclass(frozen=True)
+class Arithmetic:
+    """A binary arithmetic expression (``+``, ``-``, ``*``, ``/``).
+
+    Unary minus is parsed as ``(- 0 x)``.
     """
 
-    literals: list[Literal] = field(default_factory=list)
-    equalities: list[EqualityConstraint] = field(default_factory=list)
-    # Universally-quantified sub-conditions, expanded over objects at grounding
-    # time. Each entry is (params, body) where params is [(var, type), ...].
-    universals: list[tuple[list[tuple[str, str]], "Condition"]] = field(
-        default_factory=list
-    )
+    op: str
+    left: object
+    right: object
 
 
-# --- Effects -----------------------------------------------------------------
-# Effects are kept as a small tree; grounding expands ``forall`` and normalises
-# everything into (condition -> add/delete) conditional effects.
+@dataclass(frozen=True)
+class Comparison:
+    """A numeric comparison used in preconditions and goals."""
+
+    op: str  # one of < <= = >= >
+    left: object
+    right: object
+
+
+# --- condition formulas (negation normal form) -------------------------------
+
+
+@dataclass(frozen=True)
+class Truth:
+    """The constant ``true`` — what an empty ``(and)`` parses to."""
+
+    value: bool = True
+
+
+@dataclass(frozen=True)
+class And:
+    parts: tuple = ()
+
+
+@dataclass(frozen=True)
+class Or:
+    parts: tuple = ()
+
+
+@dataclass(frozen=True)
+class Exists:
+    params: tuple = ()  # ((var, type), ...)
+    body: object = None
+
+
+@dataclass(frozen=True)
+class Forall:
+    params: tuple = ()  # ((var, type), ...)
+    body: object = None
+
+
+@dataclass
+class Conjunct:
+    """One ground DNF disjunct: a conjunction of literals and comparisons.
+
+    Produced by the grounder, not by the parser. ``equalities`` are resolved
+    during instantiation and never survive into a grounded operator.
+    """
+
+    literals: list = field(default_factory=list)
+    equalities: list = field(default_factory=list)
+    comparisons: list = field(default_factory=list)
+
+
+# --- effects -----------------------------------------------------------------
 
 
 @dataclass
@@ -88,7 +163,22 @@ class DelEffect:
 
 @dataclass
 class IncreaseCostEffect:
-    amount: int
+    """``(increase (total-cost) k)`` — the classical action-cost shorthand."""
+
+    amount: float
+
+
+@dataclass
+class NumericEffect:
+    """An assignment to a numeric fluent.
+
+    ``op`` is one of ``assign``, ``increase``, ``decrease``, ``scale-up`` or
+    ``scale-down``.
+    """
+
+    op: str
+    target: FluentRef
+    value: object  # an arithmetic expression
 
 
 @dataclass
@@ -98,49 +188,76 @@ class ConjunctiveEffect:
 
 @dataclass
 class ForallEffect:
-    params: list[tuple[str, str]]  # (variable, type)
+    params: list  # [(variable, type), ...]
     body: object
 
 
 @dataclass
 class WhenEffect:
-    condition: Condition
+    condition: object  # a condition formula
     body: object
 
 
-# --- Domain / problem --------------------------------------------------------
+# --- domain / problem --------------------------------------------------------
 
 
 @dataclass
 class Predicate:
     name: str
-    params: list[tuple[str, str]]  # (variable, type)
+    params: list  # [(variable, type), ...]
+
+
+@dataclass
+class Function:
+    """A declared numeric function (``:functions``)."""
+
+    name: str
+    params: list = field(default_factory=list)
 
 
 @dataclass
 class Action:
     name: str
-    parameters: list[tuple[str, str]]  # (variable, type)
-    precondition: Condition
+    parameters: list  # [(variable, type), ...]
+    precondition: object  # a condition formula
     effect: object  # one of the *Effect nodes above
+    # Set when the action came from a (:durative-action ...) block; the value is
+    # its duration, and the compilation is documented in jupyddl.requirements.
+    duration: object = None
+
+
+@dataclass
+class DerivedPredicate:
+    """A ``(:derived (head ?x) body)`` axiom."""
+
+    head: Atom
+    params: list  # [(variable, type), ...]
+    body: object  # a condition formula
 
 
 @dataclass
 class Domain:
     name: str
-    requirements: list[str]
-    types: dict[str, str]  # child type -> parent type ("object" if none)
-    constants: list[tuple[str, str]]  # (name, type)
-    predicates: list[Predicate]
-    actions: list[Action]
-    functions: list[str] = field(default_factory=list)
+    requirements: list
+    types: dict  # child type -> parent type ("object" if none)
+    constants: list  # [(name, type), ...]
+    predicates: list
+    actions: list
+    functions: list = field(default_factory=list)
+    derived: list = field(default_factory=list)
+
+    @property
+    def has_durative_actions(self) -> bool:
+        return any(action.duration is not None for action in self.actions)
 
 
 @dataclass
 class Problem:
     name: str
     domain_name: str
-    objects: list[tuple[str, str]]  # (name, type)
-    init: list[Atom]
-    goal: Condition
+    objects: list  # [(name, type), ...]
+    init: list  # [Atom, ...]
+    goal: object  # a condition formula
     metric_minimize_cost: bool = False
+    init_numeric: dict = field(default_factory=dict)  # FluentRef -> float
+    metric: object = None  # (direction, expression) or None

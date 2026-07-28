@@ -47,33 +47,57 @@ async function init(pyodideBase, sources) {
   post("ready", JSON.parse(pyodide.runPython("describe()")));
 }
 
-async function solve(request) {
-  const emit = (json) => post("progress", JSON.parse(json));
-  const runner = pyodide.globals.get("run_solve");
-  const started = performance.now();
+/** Call a Python entry point, always releasing the proxy afterwards. */
+function call(name, ...args) {
+  const runner = pyodide.globals.get(name);
   try {
-    const out = runner(
-      request.domain, request.problem, request.planner,
-      request.heuristic, request.weight ?? 2.0, emit,
-    );
-    const parsed = JSON.parse(out);
-    parsed.wall = (performance.now() - started) / 1000;
-    post("result", parsed);
+    return JSON.parse(runner(...args));
   } finally {
     runner.destroy();
   }
 }
 
-async function race(request) {
-  const runner = pyodide.globals.get("run_race");
-  try {
-    const out = runner(
-      request.domain, request.problem, JSON.stringify(request.configs),
-    );
-    post("race", JSON.parse(out));
-  } finally {
-    runner.destroy();
-  }
+async function solve(request) {
+  const emit = (json) => post("progress", JSON.parse(json));
+  const started = performance.now();
+  const parsed = call(
+    "run_solve",
+    request.domain, request.problem, request.planner,
+    request.heuristic, request.weight ?? 2.0,
+    JSON.stringify(request.limits || {}), emit,
+  );
+  parsed.wall = (performance.now() - started) / 1000;
+  post("result", parsed);
+}
+
+async function experiment(request) {
+  // Rows stream back as they finish so a long matrix fills the table live.
+  const emit = (json) => post("experiment-row", JSON.parse(json).row);
+  const parsed = call(
+    "run_experiment",
+    JSON.stringify(request.instances),
+    JSON.stringify(request.configs),
+    JSON.stringify(request.limits || {}),
+    emit,
+  );
+  post("experiment-done", parsed);
+}
+
+async function inspect(request) {
+  post("inspect", call("run_inspect", request.domain, request.problem));
+}
+
+async function generate(request) {
+  post("generated", {
+    ...call(
+      "run_generate",
+      request.kind, request.size, request.seed,
+      JSON.stringify(request.extra || {}),
+    ),
+    kind: request.kind,
+    size: request.size,
+    seed: request.seed,
+  });
 }
 
 self.onmessage = async (event) => {
@@ -85,8 +109,12 @@ self.onmessage = async (event) => {
       post("error", { message: "the runtime is still loading" });
     } else if (type === "solve") {
       await solve(event.data);
-    } else if (type === "race") {
-      await race(event.data);
+    } else if (type === "experiment") {
+      await experiment(event.data);
+    } else if (type === "inspect") {
+      await inspect(event.data);
+    } else if (type === "generate") {
+      await generate(event.data);
     }
   } catch (error) {
     // Pyodide surfaces Python exceptions with the traceback in .message.

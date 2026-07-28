@@ -277,3 +277,145 @@ main { padding: 18px 20px 40px; max-width: 1500px; margin: 0 auto; }
   .controls { gap: 10px; }
   .editor { height: 300px; }
 }
+
+/* ------------------------------------------------------- workbench views */
+.viewnav { display: flex; gap: 2px; flex: 1 1 auto; justify-content: center; }
+.navlink {
+  border: none; background: transparent; color: var(--text-secondary);
+  font-size: 13.5px; font-weight: 600; padding: 7px 14px; border-radius: 8px;
+}
+.navlink:hover { background: var(--page); color: var(--text-primary); }
+.navlink.active { background: var(--page); color: var(--series-1); }
+
+.view { display: none; }
+.view.active { display: block; }
+
+.controls.inner { box-shadow: none; }
+.field.narrow { max-width: 120px; }
+.field input[type="number"] {
+  font-family: inherit; font-size: 13px; border-radius: 8px;
+  border: 1px solid var(--border); padding: 7px 10px;
+  background: var(--surface-1); color: var(--text-primary); width: 100%;
+}
+.tagrow { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+.chip {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .03em;
+  color: var(--text-secondary); background: var(--page);
+  border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px;
+}
+.wide.pane + .wide.pane { margin-top: 16px; }
+#view-experiment .pane, #view-requirements .pane, #view-generate .pane {
+  margin-bottom: 16px;
+}
+.prose {
+  font-size: 13.5px; color: var(--text-secondary); max-width: 78ch;
+  margin: 0 0 14px;
+}
+.ghost.wide { width: 100%; margin-top: 8px; justify-content: center; }
+
+/* ------------------------------------------------------------- pickers */
+.matrix {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  margin-bottom: 14px;
+}
+.picker {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px 8px; margin: 0; min-width: 0;
+}
+.picker legend {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted); padding: 0 4px;
+}
+.checklist {
+  display: flex; flex-direction: column; gap: 3px;
+  max-height: 190px; overflow-y: auto;
+}
+.check {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; color: var(--text-primary); cursor: pointer;
+  padding: 2px 3px; border-radius: 5px;
+}
+.check:hover { background: var(--page); }
+.picker-actions { display: flex; gap: 6px; margin-top: 7px; }
+.picker.limits { display: flex; flex-direction: column; gap: 8px; }
+.inline {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11.5px; color: var(--text-secondary);
+}
+.inline input { width: 100%; }
+
+.run-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.spacer { flex: 1 1 auto; }
+.progressbar {
+  height: 4px; background: var(--grid); border-radius: 999px;
+  overflow: hidden; margin-top: 12px;
+}
+#exp-progress-fill {
+  height: 100%; width: 0; background: var(--series-1);
+  transition: width .18s ease;
+}
+
+/* -------------------------------------------------------------- tables */
+.table-scroll { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+.data-table th.num, .data-table td.num { text-align: right; }
+.sortable th[data-key] { cursor: pointer; user-select: none; white-space: nowrap; }
+.sortable th[data-key]:hover { color: var(--text-primary); }
+.sortable th.sorted-asc::after { content: " ▲"; font-size: 8px; }
+.sortable th.sorted-desc::after { content: " ▼"; font-size: 8px; }
+.data-table thead th {
+  position: sticky; top: 0; background: var(--surface-1); z-index: 1;
+}
+.row-error td { opacity: .65; }
+.warn { color: var(--series-4); font-weight: 600; }
+.verdict { font-size: 13px; margin: 0 0 10px; color: var(--text-secondary); }
+
+/* -------------------------------------------------------- requirements */
+.filterbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.filter {
+  font-size: 12px; padding: 4px 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-secondary); text-transform: capitalize;
+}
+.filter.active {
+  background: var(--series-1); border-color: var(--series-1); color: #fff;
+}
+.pill {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+  padding: 2px 9px; border-radius: 999px; color: #fff;
+}
+.pill.native { background: var(--series-6); }
+.pill.compiled { background: var(--series-1); }
+.pill.partial { background: var(--series-4); color: #21160a; }
+.pill.rejected { background: var(--text-muted); }
+#req-table td { vertical-align: top; text-align: left; }
+#req-table td:nth-child(2), #req-table td:nth-child(3) { white-space: nowrap; }
+.note { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+#req-table code { font-family: var(--mono); font-size: 12px; }
+
+/* ------------------------------------------------------------ generate */
+.gen-output {
+  display: grid; gap: 14px; margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+.gen-output h3 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); margin: 0 0 6px;
+}
+.code {
+  background: var(--page); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; margin: 0;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  max-height: 420px; overflow: auto; white-space: pre; color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+  .topbar { flex-wrap: wrap; }
+  .viewnav { order: 3; width: 100%; justify-content: flex-start; }
+}
+
+/* The requirement table is prose, not figures: headers align with their text. */
+#req-table th { text-align: left; }
+/* Cut the scrolling checklists on a whole row rather than through one. */
+.checklist { max-height: 176px; padding-right: 2px; }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..task import facts_of
 from .base import Heuristic
 
 
@@ -26,4 +27,4 @@ class GoalCountHeuristic(Heuristic):
     name = "goalcount"
 
     def __call__(self, state) -> float:
-        return float(len(self.task.goals - state))
+        return float(len(self.task.goals - facts_of(state)))

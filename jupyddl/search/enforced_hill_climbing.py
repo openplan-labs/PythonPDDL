@@ -16,15 +16,17 @@ from .result import SearchResult, SearchStats
 
 
 class EnforcedHillClimbing(Planner):
+    """Enforced hill climbing: breadth-first probes for a strictly better h."""
+
     name = "ehc"
     requires_heuristic = True
 
-    def search(self, task, heuristic=None, observer=None) -> SearchResult:
+    def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
         stats = SearchStats()
         start = time.perf_counter()
         if observer is not None:
             observer.on_start(task, self.name, heuristic_name(heuristic))
-        current = task.init
+        current = task.initial_state()
         current_h = heuristic(current)
         stats.evaluated += 1
         plan: list = []
@@ -74,7 +76,7 @@ class EnforcedHillClimbing(Planner):
                     stats=stats,
                 )
             for op in task.applicable_operators(state):
-                succ = op.apply(state)
+                succ = task.apply(op, state)
                 stats.generated += 1
                 if succ in visited:
                     continue

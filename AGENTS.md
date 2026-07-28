@@ -26,6 +26,10 @@ native build step, and the core has zero runtime dependencies.
   Also `jupyddl animate` (MP4/GIF replay) and `jupyddl demo` (full chart gallery).
 
 ### Layout beyond the core
+- `jupyddl/requirements.py` — **the source of truth** for what every PDDL
+  requirement flag does here. Change support for a feature *here first*; the
+  parser, the CLI, the README table and the web UI all read it.
+- `jupyddl/generator.py` — reproducible instance generators.
 - `jupyddl/trace.py` — search observers, events, `SearchTrace` (JSON).
 - `jupyddl/live.py` — the terminal dashboard; **stdlib only, keep it that way**,
   it is what makes "watch a search" free of dependencies.
@@ -34,6 +38,26 @@ native build step, and the core has zero runtime dependencies.
 - `web/` — the Pyodide playground; `tools/build_web.py` bundles the package
   sources and demos into `web/dist` (committed).
 - `tools/make_promo.py` — renders the promo video from measured runs.
+
+### The condition pipeline
+Conditions are a **formula tree in negation normal form**: `parse_condition`
+pushes every `not` down to the literals and rewrites `imply`, so nothing
+downstream sees a negated compound. Quantifiers survive parsing because
+expanding them needs the object pool; `grounding._dnf` expands them and
+distributes to DNF, and each disjunct becomes its own operator (named
+`action(args)#N`). `Operator.base_name` strips that tag for display.
+
+### Optional task layers
+`Task` carries three layers that are inert unless the domain uses them, and the
+planners must go through the task rather than the operator to honour them:
+
+- **axioms** — `Task.apply()` re-closes derived predicates after every step, and
+  `Task.initial_state()` closes the initial state. A planner that calls
+  `op.apply(state)` directly will silently skip this.
+- **numeric fluents** — the state becomes a `State(facts, values)` instead of a
+  frozenset. Anything doing `set(state)` still works (`State` is iterable); use
+  `facts_of(state)` when you need the fact set specifically.
+- **durations** — `op.duration` plus `Task.makespan(plan)`.
 
 ### Non-obvious notes
 - **Instrumentation must stay transparent.** Planners only touch the observer
@@ -62,6 +86,15 @@ native build step, and the core has zero runtime dependencies.
 - **Matplotlib is optional**: only `jupyddl.viz` and `jupyddl.benchmark.plot_summary`
   need it; run headless with `MPLBACKEND=Agg` if no display (`jupyddl.viz` already
   forces the Agg backend).
-- Extend via the registries: `jupyddl.search.PLANNERS` and
-  `jupyddl.heuristics.HEURISTICS`. The CLI, benchmark harness and playground all
-  read from them, so a new entry shows up everywhere for free.
+- **Budgets are cooperative.** Python cannot safely interrupt a running search,
+  so planners poll a `Budget` in their main loop. If you add a planner with an
+  unbounded loop, poll it — `bnb` and `iw` will otherwise run for hours. A run
+  stopped by a budget sets `stats.truncated`; never report such a run as
+  unsolvable.
+- **The clock is checked every expansion** (`Budget.check_every=1`). That looks
+  wasteful but is not: one LM-cut expansion can cost tens of milliseconds, and a
+  coarser interval overshoots a short `--time-limit` enormously.
+- Extend via the registries: `jupyddl.search.PLANNERS`,
+  `jupyddl.heuristics.HEURISTICS` and `jupyddl.generator.GENERATORS`. The CLI,
+  benchmark harness and web workbench all read from them, so a new entry shows
+  up everywhere for free.

@@ -6,7 +6,7 @@
 classical-to-SOTA planners, heuristics, benchmarking — and a search you can
 actually *watch*. ✨
 
-**[▶ Open the playground](https://apla-toolbox.github.io/PythonPDDL/)** ·
+**[▶ Open the workbench](https://apla-toolbox.github.io/PythonPDDL/)** ·
 [Watch the 75-second tour](promo/jupyddl-promo.mp4)
 
 </div>
@@ -36,22 +36,30 @@ is trivial to install, embed, teach with, and build on.
 
 ## Features 🌱
 
-- 🧩 **Hand-written PDDL parser** and grounder (typing, negative preconditions,
-  equality, action costs, and `forall`/`when` conditional effects).
-- 🔎 **Uninformed planners**: BFS, DFS, Iterative Deepening.
-- 🧭 **Informed planners**: Dijkstra (uniform cost), Greedy Best-First, A*,
-  Weighted A*, IDA*, and Enforced Hill Climbing (FF-style).
+- 🧩 **Hand-written PDDL parser** and grounder covering **STRIPS, full ADL,
+  derived predicates, numeric fluents and durative actions** — 15 of the 21
+  requirement flags, with the other 6 refused by name rather than ignored.
+  ([the full matrix](#pddl-support-))
+- 🔎 **14 planners**: BFS, DFS, Iterative Deepening, Dijkstra, Greedy Best-First,
+  A*, Weighted A*, IDA*, Enforced Hill Climbing, hill climbing, beam search,
+  Iterated Width, branch and bound, and anytime weighted A*.
 - 📊 **Heuristics from classical to SOTA**: blind, goal-count, `h_max`, `h_add`,
   FF (`h_ff`), critical-path `h^m` (`h1`/`h2`), and **LM-cut**.
+- ⏱️ **Search budgets** on every planner: bound a run by nodes or by seconds and
+  a truncated result says so, so "we stopped looking" never masquerades as
+  "no plan exists".
+- 🎲 **Reproducible instance generators** — seven parametrised domains where the
+  same *(kind, size, seed)* always yields byte-identical PDDL.
 - 🎥 **Watch the search happen**: an observer hook on every planner feeds
   recorded traces, publication-ready charts, animations, and a live terminal
   dashboard that needs *no dependencies at all*.
-- 🌐 **A browser playground** that runs this exact library under Pyodide —
-  edit PDDL, pick a planner, watch it search. Nothing is uploaded.
+- 🌐 **A browser workbench** running this exact library under Pyodide: solve,
+  sweep an experiment matrix, browse the support table, generate instances.
+  Nothing is uploaded.
 - ⚖️ **Benchmarking harness** for comparative analysis with CSV export and a
   full dashboard.
-- 🧱 **Extensible by design**: planners and heuristics live behind simple
-  registries; add your own in a few lines.
+- 🧱 **Extensible by design**: planners, heuristics and generators live behind
+  simple registries; add your own in a few lines.
 - ✅ **Zero runtime dependencies** and a comprehensive test suite.
 
 ## Install 💾
@@ -96,6 +104,16 @@ jupyddl benchmark demos --planners bfs,dijkstra,astar,gbfs,ehc --heuristic hff \
 
 # Render every chart for every bundled demo
 jupyddl demo -o gallery --both-modes
+
+# What PDDL does this thing actually support?
+jupyddl requirements --verbose
+
+# Generate a reproducible difficulty ladder
+jupyddl generate gripper --size 2 --count 8 --step 2 -o instances/
+
+# Bound any run by nodes or by seconds
+jupyddl solve demos/blocksworld12/domain.pddl demos/blocksworld12/problem.pddl \
+    --search gbfs --heuristic hff --time-limit 10
 ```
 
 ### The live dashboard
@@ -209,16 +227,28 @@ task = build_task("demos/gripper/domain.pddl", "demos/gripper/problem.pddl")
 solve_task(task, "gbfs", "hff", observer=StallDetector())
 ```
 
-## The browser playground 🌐
+## The browser workbench 🌐
 
 **[apla-toolbox.github.io/PythonPDDL](https://apla-toolbox.github.io/PythonPDDL/)**
 
-The playground runs *this library*, unmodified, compiled to WebAssembly by
+The workbench runs *this library*, unmodified, compiled to WebAssembly by
 [Pyodide](https://pyodide.org) — not a JavaScript re-implementation. Because the
 core is stdlib-only there is no wheel to resolve: the package sources are handed
-straight to the interpreter. Edit the PDDL, pick a planner and a heuristic, and
-watch the cost curves and the search wavefront animate while it works; or race
-four configurations against each other. Everything is computed in your tab.
+straight to the interpreter. Everything is computed in your tab; nothing is
+uploaded.
+
+Four views:
+
+- **Solve** — edit the PDDL, pick a planner, a heuristic and a budget, then watch
+  the cost curves and the search wavefront animate while it works. Or ground
+  without solving, to see what the instance actually compiles to.
+- **Experiment** — sweep an instance × configuration matrix. Every configuration
+  runs against the same grounding, rows stream in as they finish, the table
+  sorts on any column, and the whole run exports to CSV or JSON.
+- **PDDL support** — the requirement matrix, filterable by support level, read
+  straight out of the library rather than transcribed.
+- **Generate** — produce a reproducible instance from a *(kind, size, seed)* and
+  open it in Solve.
 
 <div align="center">
 
@@ -235,6 +265,34 @@ python -m http.server -d web 8000  # then open http://localhost:8000
 
 `web/dist` is committed so the page works from a plain clone; CI fails if it
 drifts out of step with the sources.
+
+## Generating instances 🎲
+
+A benchmark needs a difficulty ladder, and hand-writing one is tedious. The
+generators are seeded, so a published experiment can be reproduced exactly —
+the same *(kind, size, seed)* always emits byte-identical PDDL.
+
+```python
+from jupyddl.generator import generate, write_instance
+
+domain, problem = generate("blocksworld", size=10, seed=7)
+ladder = [write_instance("gripper", "instances/", size=n, seed=1)
+          for n in range(2, 16, 2)]
+```
+
+| Generator | What it stresses |
+|---|---|
+| `blocksworld` | deep plans, plateaus |
+| `gripper` | high branching factor |
+| `logistics` | action costs, type hierarchy |
+| `rovers` | ADL — disjunctive and existential preconditions |
+| `numeric-transport` | numeric fluents: fuel and refuelling |
+| `workshop` | durative actions and makespan |
+| `random-strips` | random operators around a planted solution chain |
+
+`random-strips` plants a reachable chain and buries it in distractor actions:
+purely random operators are almost always unsolvable, which makes for a useless
+benchmark. The test suite grounds and solves everything each generator emits.
 
 ## Benchmarking 📈
 
@@ -261,59 +319,114 @@ and to make the difference between planners obvious:
 |---|---|---:|
 | `gripper` | high branching factor, classic IPC domain | 17 |
 | `blocksworld8` | deep plans and heavy plateaus | 16 |
+| `blocksworld12` | twelve blocks — satisficing planners only, in practice | — |
 | `hanoi` | untyped domain, exponential space, closed-form answer (2⁵−1) | 31 |
 | `logistics` | type hierarchy and `:action-costs` | 24 |
 | `sokoban` | static-predicate pruning, irreversible moves, dead ends | 11 |
 | `elevator` | `when` conditional effects | 14 |
+| `rovers` | **ADL**: `or` and `exists` in preconditions | 11 |
+| `network` | **derived predicates**: recursive reachability axioms | 7 |
+| `numeric-transport` | **numeric fluents**: fuel burnt by driving, restored by refuelling | 11 |
+| `workshop` | **durative actions**: plans report a makespan | 33 |
+
+Most were produced by the generators, so `jupyddl generate` reproduces them
+exactly; `network` is hand-written because a recursive axiom is the point of it.
 
 The `pddl-examples` git submodule supplies the smaller instances used by the
 parser and grounder tests.
 
 ## Available planners & heuristics
 
-| Planners | Heuristics |
+| Kind | Planners |
 |---|---|
-| `bfs`, `dfs`, `iddfs`, `dijkstra`, `gbfs`, `astar`, `wastar`, `idastar`, `ehc` | `blind`, `goalcount`, `hmax`, `hadd`, `hff`, `h1`, `h2`/`hm`, `lmcut` |
+| Uninformed | `bfs`, `dfs`, `iddfs`, `dijkstra` |
+| Informed best-first | `gbfs`, `astar`, `wastar`, `idastar` |
+| Local / bounded | `ehc`, `hc`, `beam`, `iw` |
+| Anytime / optimal | `bnb`, `awastar` |
 
-`A*`/`IDA*` are cost-optimal with an admissible heuristic (`blind`, `hmax`,
-`h1`/`h2`, `lmcut`); `dijkstra` and `bfs` are optimal without a heuristic.
+Heuristics: `blind`, `goalcount`, `hmax`, `hadd`, `hff`, `h1`, `h2`/`hm`, `lmcut`.
 
-## Supported PDDL subset
+`astar`, `idastar`, `bnb` and `dijkstra`/`bfs` are cost-optimal (the first three
+given an admissible heuristic — `blind`, `hmax`, `h1`/`h2`, `lmcut`). `awastar`
+lowers its weight until it reaches plain A*, so its last plan is optimal if the
+run completes. `hc`, `beam` and `iw` trade completeness for speed, and `iw` needs
+no heuristic at all — it prunes by *novelty* instead.
 
-STRIPS, `:typing` (with hierarchy), `:negative-preconditions`, `:equality`,
-`:action-costs` (`(increase (total-cost) k)`), universally-quantified goals, and
-`forall`/`when` conditional effects. Numeric fluents beyond `total-cost` and
-`:durative-action`s are out of scope and rejected with a clear error.
+## PDDL support 🧾
 
-> **Note:** on domains with conditional effects (e.g. `flip`, `elevator`), the
-> delete-relaxation heuristics (`hadd`, `hff`, `lmcut`, `h^m`) are *satisficing*
-> only — admissibility is not guaranteed. Use `bfs`, `dijkstra`, or
-> `astar`/`idastar` with `blind` for guaranteed-optimal plans on such domains.
+6 requirements are modelled natively, 6 are compiled into the
+core representation, 3 are supported with a documented restriction, and
+6 are **refused at parse time with an explanation** — never silently
+ignored, because a silently ignored requirement produces plans that are wrong
+rather than absent.
+
+```bash
+jupyddl requirements            # the table below, in your terminal
+jupyddl requirements --verbose  # with the full compilation notes
+```
+
+| Requirement | PDDL | Support | What jupyddl does |
+|---|---|---|---|
+| `:action-costs` | 3.0 | **native** | `(increase (total-cost) k)` and metric minimisation. Operator costs feed straight into g, so A*/Dijkstra optimise cost. |
+| `:conditional-effects` | 1.2 | **native** | `when` and `forall` inside effects. Kept explicitly in the grounded operator and evaluated against the state at application time. |
+| `:derived-predicates` | 2.2 | **native** | `(:derived ...)` axioms. Rules are grounded and evaluated to a least fixpoint after every state change, so planners and heuristics always see closed states. Derived predicates may not appear in action effects. |
+| `:equality` | 1.2 | **native** | `=` between terms. Evaluated during grounding; infeasible instances are dropped. |
+| `:strips` | 1.2 | **native** | Add/delete effects over positive literals. The core representation. Everything else compiles down to this. |
+| `:typing` | 1.2 | **native** | Typed parameters and objects, with type hierarchies. Subtypes are resolved transitively when building the object pools. |
+| `:adl` | 1.2 | **compiled** | The full ADL feature set. |
+| `:disjunctive-preconditions` | 1.2 | **compiled** | `or` in preconditions and goals. Preconditions are converted to DNF; each disjunct becomes its own grounded operator. A disjunctive goal becomes a single artificial goal fact achieved by one zero-cost operator per disjunct. |
+| `:existential-preconditions` | 1.2 | **compiled** | `exists` in preconditions and goals. Expanded over the typed object pool into a disjunction, then handled like any other disjunction. |
+| `:negative-preconditions` | 1.2 | **compiled** | `not` in preconditions and goals. Compiled to positive normal form: each negated fluent gets a complement fact that every operator maintains. |
+| `:quantified-preconditions` | 1.2 | **compiled** | Both `exists` and `forall` in preconditions. |
+| `:universal-preconditions` | 1.2 | **compiled** | `forall` in preconditions and goals. Expanded over the typed object pool into a conjunction. |
+| `:durative-actions` | 2.1 | **partial** | `(:durative-action ...)` with timed conditions and effects. Compiled to sequential actions: at-start and over-all conditions become the precondition, at-start and at-end effects are merged, and the duration is carried through so plans report a makespan. Actions therefore never overlap — this models sequential temporal planning, not true concurrency, so a plan needing two actions to run at the same time will not be found. |
+| `:fluents` | 2.1 | **partial** | Numeric plus object fluents. Only the numeric half is implemented; object fluents are rejected. |
+| `:numeric-fluents` | 2.1 | **partial** | Numeric state variables, comparisons and assignments. Supported: ground numeric fluents, comparisons (< <= = >= >) in preconditions and goals, and assign/increase/decrease/scale-up/scale-down effects over arithmetic expressions. Numeric values are part of the state, so the state space can become infinite — the delete-relaxation heuristics ignore numeric conditions, which keeps them admissible but uninformative about them. |
+| `:constraints` | 3.0 | **rejected** | State trajectory constraints (`always`, `sometime`, ...). Would need temporally-extended goal compilation. |
+| `:continuous-effects` | 2.1 | **rejected** | Effects that change continuously over an action's duration. Requires continuous-time reasoning, which this planner does not do. |
+| `:duration-inequalities` | 2.1 | **rejected** | Durations constrained by inequalities rather than fixed. The sequential compilation needs a single duration per action. |
+| `:object-fluents` | 3.1 | **rejected** | Functions returning objects rather than numbers. Terms are assumed to be constants or variables throughout. |
+| `:preferences` | 3.0 | **rejected** | Soft goals scored by a metric. Parsed and refused rather than silently treated as hard goals, which would change which plans are considered valid. |
+| `:timed-initial-literals` | 2.2 | **rejected** | Facts that become true at a given absolute time. Needs a timeline the sequential compilation does not maintain. |
+
+The table is generated from `jupyddl.requirements`, which is the single source of
+truth: the parser, the CLI and the web workbench all read the same registry.
 
 ## Architecture 🏗️
 
 ```
 jupyddl/
-  parser/       tokenizer + AST + recursive-descent parser
-  grounding.py  Domain+Problem -> grounded Task (typing, PNF, static pruning)
-  task.py       grounded STRIPS(+conditional-effects) task & operators
-  search/       planners + shared best-first engine + registry
-  heuristics/   heuristics + delete-relaxation machinery + registry
-  trace.py      search observers, events and serialisable traces
-  live.py       zero-dependency live terminal dashboard
-  viz/          matplotlib theme, charts, animations (the 'viz' extra)
-  benchmark.py  comparative benchmarking (CSV + plots)
-  cli.py        solve / benchmark / animate / demo
-web/            the Pyodide playground
-tools/          web bundler and the promo-video renderer
-demos/          demo instances used by the docs, charts and video
+  requirements.py  what every PDDL requirement flag means here (source of truth)
+  parser/          tokenizer + AST + recursive-descent parser (conditions in NNF)
+  grounding.py     Domain+Problem -> Task: quantifier expansion, DNF, PNF,
+                   static pruning, axioms, numeric compilation
+  task.py          grounded task, operators, numeric states, axioms, durations
+  search/          14 planners + best-first engine + budgets + registry
+  heuristics/      heuristics + delete-relaxation machinery + registry
+  trace.py         search observers, events and serialisable traces
+  live.py          zero-dependency live terminal dashboard
+  generator.py     reproducible instance generators
+  viz/             matplotlib theme, charts, animations (the 'viz' extra)
+  benchmark.py     comparative benchmarking (CSV + plots)
+  cli.py           solve / benchmark / animate / demo / requirements / generate
+web/               the Pyodide workbench
+tools/             web bundler and the promo-video renderer
+demos/             demo instances used by the docs, charts and video
 ```
 
 Add a planner by subclassing `jupyddl.search.Planner` (or reusing `best_first`)
-and registering it in `jupyddl.search.PLANNERS`; add a heuristic by subclassing
+and registering it in `jupyddl.search.PLANNERS`; a heuristic by subclassing
 `jupyddl.heuristics.Heuristic` and registering it in
-`jupyddl.heuristics.HEURISTICS`. Both are picked up by the CLI, the benchmark
-harness and the playground automatically.
+`jupyddl.heuristics.HEURISTICS`; a generator by adding a function to
+`jupyddl.generator.GENERATORS`. All three are picked up by the CLI, the
+benchmark harness and the web workbench automatically.
+
+**Conditions are a formula tree in negation normal form.** The parser pushes
+every `not` down to the literals and rewrites `imply`; the grounder expands the
+quantifiers against the object pool and distributes the result into DNF, emitting
+one operator per disjunct. That is why the search only ever sees conjunctive
+preconditions, and why a domain full of `or` still runs through the same
+best-first engine as plain STRIPS.
 
 ## Development 🛠️
 

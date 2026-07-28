@@ -1,0 +1,318 @@
+{
+ "generators": [
+  {
+   "name": "blocksworld",
+   "summary": "Classic block stacking. Deep plans, heavy plateaus."
+  },
+  {
+   "name": "gripper",
+   "summary": "Balls between two rooms. High branching factor."
+  },
+  {
+   "name": "logistics",
+   "summary": "Trucks and a plane with action costs."
+  },
+  {
+   "name": "numeric-transport",
+   "summary": "Numeric fluents: fuel consumption and refuelling."
+  },
+  {
+   "name": "random-strips",
+   "summary": "Random operators around a planted solution chain."
+  },
+  {
+   "name": "rovers",
+   "summary": "ADL: disjunctive and existential preconditions."
+  },
+  {
+   "name": "workshop",
+   "summary": "Durative actions; plans report a makespan."
+  }
+ ],
+ "heuristics": [
+  "blind",
+  "goalcount",
+  "h1",
+  "h2",
+  "hadd",
+  "hff",
+  "hm",
+  "hmax",
+  "lmcut"
+ ],
+ "planners": [
+  {
+   "name": "astar",
+   "optimal": true,
+   "requires_heuristic": true,
+   "summary": "A*: priority = g + h. Cost-optimal with an admissible heuristic."
+  },
+  {
+   "name": "awastar",
+   "optimal": false,
+   "requires_heuristic": true,
+   "summary": "Weighted A* that keeps going, lowering the weight after each solution."
+  },
+  {
+   "name": "beam",
+   "optimal": false,
+   "requires_heuristic": true,
+   "summary": "Breadth-first search that keeps only the ``width`` best nodes per layer."
+  },
+  {
+   "name": "bfs",
+   "optimal": true,
+   "requires_heuristic": false,
+   "summary": "FIFO breadth-first graph search. Optimal in number of actions."
+  },
+  {
+   "name": "bnb",
+   "optimal": true,
+   "requires_heuristic": true,
+   "summary": "Depth-first branch and bound."
+  },
+  {
+   "name": "dfs",
+   "optimal": false,
+   "requires_heuristic": false,
+   "summary": "LIFO depth-first graph search. Complete on finite spaces, not optimal."
+  },
+  {
+   "name": "dijkstra",
+   "optimal": true,
+   "requires_heuristic": false,
+   "summary": "Dijkstra's algorithm: priority = g. Cost-optimal, uninformed."
+  },
+  {
+   "name": "ehc",
+   "optimal": false,
+   "requires_heuristic": true,
+   "summary": "Enforced hill climbing: breadth-first probes for a strictly better h."
+  },
+  {
+   "name": "gbfs",
+   "optimal": false,
+   "requires_heuristic": true,
+   "summary": "Greedy best-first: priority = h. Fast but not optimal."
+  },
+  {
+   "name": "hc",
+   "optimal": false,
+   "requires_heuristic": true,
+   "summary": "Steepest-ascent hill climbing with a sideways-move allowance."
+  },
+  {
+   "name": "idastar",
+   "optimal": true,
+   "requires_heuristic": true,
+   "summary": "IDA*: depth-first search bounded by an increasing ``f = g + h`` threshold."
+  },
+  {
+   "name": "iddfs",
+   "optimal": true,
+   "requires_heuristic": false,
+   "summary": "Iterative-deepening DFS. Optimal in plan length with low memory."
+  },
+  {
+   "name": "iw",
+   "optimal": false,
+   "requires_heuristic": false,
+   "summary": "Iterated Width: blind search pruned by *novelty*."
+  },
+  {
+   "name": "wastar",
+   "optimal": false,
+   "requires_heuristic": true,
+   "summary": "Weighted A*: priority = g + w * h. Bounded-suboptimal for w > 1."
+  }
+ ],
+ "requirement_summary": {
+  "compiled": 6,
+  "native": 6,
+  "partial": 3,
+  "rejected": 6
+ },
+ "requirements": [
+  {
+   "implies": [],
+   "name": ":action-costs",
+   "note": "Operator costs feed straight into g, so A*/Dijkstra optimise cost.",
+   "pddl": "3.0",
+   "summary": "`(increase (total-cost) k)` and metric minimisation.",
+   "support": "native"
+  },
+  {
+   "implies": [],
+   "name": ":conditional-effects",
+   "note": "Kept explicitly in the grounded operator and evaluated against the state at application time.",
+   "pddl": "1.2",
+   "summary": "`when` and `forall` inside effects.",
+   "support": "native"
+  },
+  {
+   "implies": [],
+   "name": ":derived-predicates",
+   "note": "Rules are grounded and evaluated to a least fixpoint after every state change, so planners and heuristics always see closed states. Derived predicates may not appear in action effects.",
+   "pddl": "2.2",
+   "summary": "`(:derived ...)` axioms.",
+   "support": "native"
+  },
+  {
+   "implies": [],
+   "name": ":equality",
+   "note": "Evaluated during grounding; infeasible instances are dropped.",
+   "pddl": "1.2",
+   "summary": "`=` between terms.",
+   "support": "native"
+  },
+  {
+   "implies": [],
+   "name": ":strips",
+   "note": "The core representation. Everything else compiles down to this.",
+   "pddl": "1.2",
+   "summary": "Add/delete effects over positive literals.",
+   "support": "native"
+  },
+  {
+   "implies": [],
+   "name": ":typing",
+   "note": "Subtypes are resolved transitively when building the object pools.",
+   "pddl": "1.2",
+   "summary": "Typed parameters and objects, with type hierarchies.",
+   "support": "native"
+  },
+  {
+   "implies": [
+    ":strips",
+    ":typing",
+    ":negative-preconditions",
+    ":disjunctive-preconditions",
+    ":equality",
+    ":quantified-preconditions",
+    ":conditional-effects"
+   ],
+   "name": ":adl",
+   "note": "",
+   "pddl": "1.2",
+   "summary": "The full ADL feature set.",
+   "support": "compiled"
+  },
+  {
+   "implies": [],
+   "name": ":disjunctive-preconditions",
+   "note": "Preconditions are converted to DNF; each disjunct becomes its own grounded operator. A disjunctive goal becomes a single artificial goal fact achieved by one zero-cost operator per disjunct.",
+   "pddl": "1.2",
+   "summary": "`or` in preconditions and goals.",
+   "support": "compiled"
+  },
+  {
+   "implies": [],
+   "name": ":existential-preconditions",
+   "note": "Expanded over the typed object pool into a disjunction, then handled like any other disjunction.",
+   "pddl": "1.2",
+   "summary": "`exists` in preconditions and goals.",
+   "support": "compiled"
+  },
+  {
+   "implies": [],
+   "name": ":negative-preconditions",
+   "note": "Compiled to positive normal form: each negated fluent gets a complement fact that every operator maintains.",
+   "pddl": "1.2",
+   "summary": "`not` in preconditions and goals.",
+   "support": "compiled"
+  },
+  {
+   "implies": [
+    ":existential-preconditions",
+    ":universal-preconditions"
+   ],
+   "name": ":quantified-preconditions",
+   "note": "",
+   "pddl": "1.2",
+   "summary": "Both `exists` and `forall` in preconditions.",
+   "support": "compiled"
+  },
+  {
+   "implies": [],
+   "name": ":universal-preconditions",
+   "note": "Expanded over the typed object pool into a conjunction.",
+   "pddl": "1.2",
+   "summary": "`forall` in preconditions and goals.",
+   "support": "compiled"
+  },
+  {
+   "implies": [],
+   "name": ":durative-actions",
+   "note": "Compiled to sequential actions: at-start and over-all conditions become the precondition, at-start and at-end effects are merged, and the duration is carried through so plans report a makespan. Actions therefore never overlap \u2014 this models sequential temporal planning, not true concurrency, so a plan needing two actions to run at the same time will not be found.",
+   "pddl": "2.1",
+   "summary": "`(:durative-action ...)` with timed conditions and effects.",
+   "support": "partial"
+  },
+  {
+   "implies": [
+    ":numeric-fluents"
+   ],
+   "name": ":fluents",
+   "note": "Only the numeric half is implemented; object fluents are rejected.",
+   "pddl": "2.1",
+   "summary": "Numeric plus object fluents.",
+   "support": "partial"
+  },
+  {
+   "implies": [],
+   "name": ":numeric-fluents",
+   "note": "Supported: ground numeric fluents, comparisons (< <= = >= >) in preconditions and goals, and assign/increase/decrease/scale-up/scale-down effects over arithmetic expressions. Numeric values are part of the state, so the state space can become infinite \u2014 the delete-relaxation heuristics ignore numeric conditions, which keeps them admissible but uninformative about them.",
+   "pddl": "2.1",
+   "summary": "Numeric state variables, comparisons and assignments.",
+   "support": "partial"
+  },
+  {
+   "implies": [],
+   "name": ":constraints",
+   "note": "Would need temporally-extended goal compilation.",
+   "pddl": "3.0",
+   "summary": "State trajectory constraints (`always`, `sometime`, ...).",
+   "support": "rejected"
+  },
+  {
+   "implies": [],
+   "name": ":continuous-effects",
+   "note": "Requires continuous-time reasoning, which this planner does not do.",
+   "pddl": "2.1",
+   "summary": "Effects that change continuously over an action's duration.",
+   "support": "rejected"
+  },
+  {
+   "implies": [],
+   "name": ":duration-inequalities",
+   "note": "The sequential compilation needs a single duration per action.",
+   "pddl": "2.1",
+   "summary": "Durations constrained by inequalities rather than fixed.",
+   "support": "rejected"
+  },
+  {
+   "implies": [],
+   "name": ":object-fluents",
+   "note": "Terms are assumed to be constants or variables throughout.",
+   "pddl": "3.1",
+   "summary": "Functions returning objects rather than numbers.",
+   "support": "rejected"
+  },
+  {
+   "implies": [],
+   "name": ":preferences",
+   "note": "Parsed and refused rather than silently treated as hard goals, which would change which plans are considered valid.",
+   "pddl": "3.0",
+   "summary": "Soft goals scored by a metric.",
+   "support": "rejected"
+  },
+  {
+   "implies": [],
+   "name": ":timed-initial-literals",
+   "note": "Needs a timeline the sequential compilation does not maintain.",
+   "pddl": "2.2",
+   "summary": "Facts that become true at a given absolute time.",
+   "support": "rejected"
+  }
+ ]
+}

@@ -1,4 +1,10 @@
-"""Command-line interface: ``solve``, ``benchmark``, ``animate`` and ``demo``."""
+"""Command-line interface.
+
+``solve``, ``benchmark``, ``animate``, ``demo``, ``requirements`` and
+``generate``. Every long-running command accepts ``--max-expansions`` and
+``--time-limit``; when a search stops on one of those it says so rather than
+reporting the instance unsolvable.
+"""
 
 from __future__ import annotations
 
@@ -15,9 +21,9 @@ from .benchmark import (
     to_csv,
 )
 from .heuristics import HEURISTICS
-from .search import PLANNERS
+from .search import INFORMED_PLANNERS, PLANNERS
 
-INFORMED = {"gbfs", "astar", "wastar", "idastar", "ehc"}
+INFORMED = set(INFORMED_PLANNERS)
 
 
 def _add_solve(sub):
@@ -49,6 +55,18 @@ def _add_solve(sub):
         "--plan-plot", default=None, help="write the plan timeline chart (PNG)"
     )
     p.add_argument("--dark", action="store_true", help="render charts for dark mode")
+    p.add_argument(
+        "--max-expansions",
+        type=int,
+        default=None,
+        help="stop after this many node expansions and report what was found",
+    )
+    p.add_argument(
+        "--time-limit",
+        type=float,
+        default=None,
+        help="stop after this many seconds and report what was found",
+    )
     p.add_argument("--quiet", action="store_true", help="do not print the plan")
     p.set_defaults(func=_cmd_solve)
 
@@ -67,6 +85,18 @@ def _add_benchmark(sub):
     )
     p.add_argument("--metric", default="expanded")
     p.add_argument("--dark", action="store_true", help="render charts for dark mode")
+    p.add_argument(
+        "--max-expansions",
+        type=int,
+        default=None,
+        help="stop after this many node expansions and report what was found",
+    )
+    p.add_argument(
+        "--time-limit",
+        type=float,
+        default=None,
+        help="stop after this many seconds and report what was found",
+    )
     p.set_defaults(func=_cmd_benchmark)
 
 
@@ -130,7 +160,15 @@ def _cmd_solve(args) -> int:
     heuristic = None if args.heuristic == "none" else args.heuristic
     kwargs = {"weight": args.weight} if args.search == "wastar" else {}
     observer, recorder = _observers(args)
-    result = solve_task(task, args.search, heuristic, observer=observer, **kwargs)
+    result = solve_task(
+        task,
+        args.search,
+        heuristic,
+        observer=observer,
+        max_expansions=args.max_expansions,
+        time_limit=args.time_limit,
+        **kwargs,
+    )
 
     trace = recorder.trace if recorder else None
     if trace is not None:
@@ -141,14 +179,24 @@ def _cmd_solve(args) -> int:
 
     if not result.solved:
         if not args.live:
-            print("No plan found.")
+            if result.truncated:
+                print(
+                    "No plan found within the budget "
+                    "(the instance may still be solvable)."
+                )
+            else:
+                print("No plan found.")
         _print_stats(result)
         return 1
     valid = validate_plan(task, result.plan)
+    visible = task.visible_plan(result.plan)
     if not args.quiet:
-        print(f"Plan ({result.plan_length} steps, cost {result.cost}):")
-        for i, op in enumerate(result.plan):
-            print(f"  {i + 1:3d}. {op.name}")
+        header = f"Plan ({len(visible)} steps, cost {result.cost}"
+        if task.temporal:
+            header += f", makespan {task.makespan(result.plan):g}"
+        print(header + "):")
+        for i, op in enumerate(visible):
+            print(f"  {i + 1:3d}. {op.base_name}")
     print(f"Valid: {valid}")
     if not args.live:
         _print_stats(result)
@@ -185,7 +233,12 @@ def _cmd_benchmark(args) -> int:
         planner = planner.strip()
         configs.append((planner, args.heuristic if planner in INFORMED else None))
 
-    rows = run_benchmark(instances, configs)
+    rows = run_benchmark(
+        instances,
+        configs,
+        max_expansions=args.max_expansions,
+        time_limit=args.time_limit,
+    )
     _print_summary(summarize(rows))
     if args.csv:
         to_csv(rows, args.csv)
@@ -211,6 +264,118 @@ def _cmd_animate(args) -> int:
         trace, args.output, dark=args.dark, fps=args.fps, seconds=args.seconds
     )
     print(f"Wrote animation to {args.output}")
+    return 0
+
+
+def _add_requirements(sub):
+    p = sub.add_parser(
+        "requirements",
+        help="show which PDDL requirement flags are supported, and how",
+    )
+    p.add_argument(
+        "--support",
+        default=None,
+        help="filter by support level: native, compiled, partial or rejected",
+    )
+    p.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    p.add_argument("--verbose", action="store_true", help="include the full notes")
+    p.set_defaults(func=_cmd_requirements)
+
+
+def _add_generate(sub):
+    from .generator import GENERATORS
+
+    p = sub.add_parser(
+        "generate", help="generate PDDL instances reproducibly from a seed"
+    )
+    p.add_argument("kind", choices=sorted(GENERATORS))
+    p.add_argument("-o", "--output", default=None, help="write into this folder")
+    p.add_argument("-n", "--size", type=int, default=4, help="instance size")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument(
+        "--count",
+        type=int,
+        default=1,
+        help="generate a ladder of instances with increasing size",
+    )
+    p.add_argument(
+        "--step", type=int, default=1, help="size increment between ladder rungs"
+    )
+    p.set_defaults(func=_cmd_generate)
+
+
+def _cmd_requirements(args) -> int:
+    from .requirements import as_rows, summary
+
+    rows = as_rows()
+    if args.support:
+        rows = [row for row in rows if row["support"] == args.support]
+        if not rows:
+            print(
+                f"No requirements with support level '{args.support}'.", file=sys.stderr
+            )
+            return 1
+
+    if args.json:
+        import json
+
+        print(json.dumps({"requirements": rows, "summary": summary()}, indent=2))
+        return 0
+
+    counts = summary()
+    print(
+        f"jupyddl PDDL support: {counts['native']} native, "
+        f"{counts['compiled']} compiled, {counts['partial']} partial, "
+        f"{counts['rejected']} rejected\n"
+    )
+    print(f"{'requirement':<30}{'PDDL':<7}{'support':<11}summary")
+    print("-" * 100)
+    for row in rows:
+        print(f"{row['name']:<30}{row['pddl']:<7}{row['support']:<11}{row['summary']}")
+        if args.verbose and row["note"]:
+            for line in _wrap(row["note"], 92):
+                print(f"{'':<48}{line}")
+    if not args.verbose:
+        print("\nRun with --verbose for the details of each compilation.")
+    return 0
+
+
+def _wrap(text: str, width: int) -> list:
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        if len(current) + len(word) + 1 > width:
+            lines.append(current)
+            current = word
+        else:
+            current = f"{current} {word}".strip()
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _cmd_generate(args) -> int:
+    from .generator import generate, write_instance
+
+    sizes = [args.size + i * args.step for i in range(max(1, args.count))]
+    if args.output is None:
+        if len(sizes) > 1:
+            print(
+                "Generating a ladder needs --output; a single instance can go "
+                "to stdout but several cannot.",
+                file=sys.stderr,
+            )
+            return 1
+        domain, problem = generate(args.kind, size=args.size, seed=args.seed)
+        print(";; ---------- domain.pddl ----------")
+        print(domain)
+        print(";; ---------- problem.pddl ----------")
+        print(problem)
+        return 0
+
+    for size in sizes:
+        folder = write_instance(args.kind, args.output, size=size, seed=args.seed)
+        print(f"Wrote {folder}")
     return 0
 
 
@@ -310,6 +475,8 @@ def main(argv=None) -> int:
     _add_benchmark(sub)
     _add_animate(sub)
     _add_demo(sub)
+    _add_requirements(sub)
+    _add_generate(sub)
     args = parser.parse_args(argv)
     return args.func(args)
 

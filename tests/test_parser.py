@@ -11,7 +11,7 @@ from jupyddl.parser import (
     parse_problem_file,
     tokenize,
 )
-from jupyddl.parser.ast import Domain, Problem
+from jupyddl.parser.ast import Domain, Forall, Literal, Or, Problem
 
 from conftest import paths
 
@@ -55,9 +55,11 @@ def test_parse_domain_structure():
     assert ":negative-preconditions" in dom.requirements
     assert dom.types == {"room": "object", "ball": "object"}
     action = {a.name: a for a in dom.actions}["pick"]
-    # Positive and negative literals separated correctly.
-    assert any(lit.positive for lit in action.precondition.literals)
-    assert any(not lit.positive for lit in action.precondition.literals)
+    # Conditions parse into a formula tree in negation normal form, so the
+    # conjunction's parts are literals carrying their own sign.
+    literals = [p for p in action.precondition.parts if isinstance(p, Literal)]
+    assert any(lit.positive for lit in literals)
+    assert any(not lit.positive for lit in literals)
 
 
 def test_parse_problem_structure():
@@ -71,7 +73,11 @@ def test_parse_problem_structure():
 def test_quantified_goal_captured():
     dom, prob = paths("flip")
     problem = parse_problem_file(prob)
-    assert problem.goal.universals, "forall goal should be captured as a universal"
+    # `forall` survives parsing as a quantifier node; the grounder expands it
+    # once the object pool exists.
+    assert isinstance(problem.goal, Forall) or any(
+        isinstance(part, Forall) for part in getattr(problem.goal, "parts", ())
+    ), "forall goal should be captured as a quantifier"
 
 
 def test_numeric_fluent_is_unsupported():
@@ -80,9 +86,19 @@ def test_numeric_fluent_is_unsupported():
         parse_domain_file(dom)
 
 
-def test_disjunction_unsupported():
+def test_disjunction_parses_to_an_or_node():
+    """`or` used to be rejected; it is now compiled to one operator per disjunct."""
+    domain = parse(
+        "(define (domain d) (:predicates (p) (q))"
+        " (:action a :precondition (or (p) (q)) :effect (p)))"
+    )
+    assert isinstance(domain.actions[0].precondition, Or)
+
+
+def test_disjunction_in_an_effect_is_still_rejected():
+    """`or` has no meaning on the right-hand side of an action."""
     with pytest.raises(UnsupportedFeatureError):
         parse(
             "(define (domain d) (:predicates (p) (q))"
-            " (:action a :precondition (or (p) (q)) :effect (p)))"
+            " (:action a :precondition (p) :effect (or (p) (q))))"
         )

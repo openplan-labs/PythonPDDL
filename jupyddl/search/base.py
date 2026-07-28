@@ -25,8 +25,14 @@ class Planner:
     optimal: bool = False
 
     def search(
-        self, task, heuristic=None, observer=None
+        self, task, heuristic=None, observer=None, budget=None
     ) -> SearchResult:  # pragma: no cover
+        """Run the planner.
+
+        ``budget`` is an optional :class:`~jupyddl.search.result.Budget`; when a
+        planner stops because it ran out of budget it sets ``stats.truncated``,
+        so "no plan" can be told apart from "gave up".
+        """
         raise NotImplementedError
 
 
@@ -36,7 +42,7 @@ def heuristic_name(heuristic) -> str:
 
 
 def best_first(
-    task, priority, heuristic=None, reopen=True, observer=None
+    task, priority, heuristic=None, reopen=True, observer=None, budget=None
 ) -> SearchResult:
     """Generic best-first graph search.
 
@@ -47,7 +53,7 @@ def best_first(
     """
     stats = SearchStats()
     start = time.perf_counter()
-    init = task.init
+    init = task.initial_state()
 
     hcache: dict = {}
 
@@ -75,6 +81,8 @@ def best_first(
     open_list = [(priority(0, h0), next(counter), root)]
 
     while open_list:
+        if budget is not None and budget.exceeded(stats):
+            break
         _, _, node = heapq.heappop(open_list)
         if node.g > best_g.get(node.state, math.inf):
             continue  # stale, a cheaper path to this state was found
@@ -101,9 +109,9 @@ def best_first(
                 action="" if node.action is None else node.action.name,
             )
         for op in task.operators:
-            if not op.precond <= state:
+            if not op.applicable(state):
                 continue
-            succ = op.apply(state)
+            succ = task.apply(op, state)
             new_g = node.g + op.cost
             stats.generated += 1
             prev = best_g.get(succ, math.inf)

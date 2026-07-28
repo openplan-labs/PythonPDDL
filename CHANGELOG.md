@@ -4,6 +4,62 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-28
+
+Grows the PDDL fragment from STRIPS to most of PDDL 3.1, and turns the browser
+playground into a research workbench.
+
+### Added
+- **`jupyddl.requirements`**: one registry saying what happens to every PDDL
+  requirement flag — native, compiled, partial or rejected — with the reason.
+  The parser, `jupyddl requirements`, the README table and the web UI all read
+  it, so they cannot drift apart.
+- **Full ADL conditions**: `or`, `imply`, `exists` and nested `not` in
+  preconditions, goals and `when` conditions. The parser produces negation
+  normal form; the grounder expands quantifiers over the object pool and
+  distributes to DNF, emitting one operator per disjunct. A disjunctive goal is
+  compiled to an artificial goal fact reached by a zero-cost operator per
+  disjunct, hidden from the printed plan via `Task.visible_plan`.
+- **Derived predicates** (`:derived`): rules are grounded into `Axiom`s and
+  closed to a least fixpoint after every state change, and enter the
+  delete-relaxation as zero-cost rules so the heuristics stay admissible.
+- **Numeric fluents**: comparisons in preconditions and goals, and
+  `assign`/`increase`/`decrease`/`scale-up`/`scale-down` effects over arithmetic
+  expressions. Numeric tasks carry a `State` with a value vector; classical
+  tasks keep the bare frozenset and pay nothing.
+- **Durative actions**: parsed with `at start`/`over all`/`at end` conditions and
+  effects, compiled to sequential actions carrying their duration, with
+  `Task.makespan`. Concurrency is explicitly *not* modelled — see the support
+  table.
+- **Five more planners**: hill climbing (`hc`), beam search (`beam`), Iterated
+  Width (`iw`), branch and bound (`bnb`) and anytime weighted A* (`awastar`).
+- **Search budgets**: `max_expansions` and `time_limit` on every planner, the
+  API and the benchmark harness. A run that stops on its budget sets
+  `stats.truncated`, so an empty result never masquerades as a proof of
+  unsolvability.
+- **`jupyddl.generator`**: seven reproducible instance generators — same
+  *(kind, size, seed)*, same bytes — plus `jupyddl generate`.
+- **New demo instances**: `rovers` (ADL), `network` (recursive axioms),
+  `numeric-transport`, `workshop` (temporal) and `blocksworld12`.
+- **New CLI commands**: `jupyddl requirements` and `jupyddl generate`;
+  `--max-expansions` / `--time-limit` on `solve` and `benchmark`.
+- **The web workbench**: four views — Solve, Experiment (an instance ×
+  configuration sweep with a sortable table and CSV/JSON export), PDDL support,
+  and Generate.
+
+### Changed
+- Planners take their initial state from `Task.initial_state()` and step through
+  `Task.apply()`, so axioms close and numeric values flow without every planner
+  knowing about either.
+- `validate_plan` replays through the task instead of the raw operators; it
+  previously started from `task.init` and so saw neither axioms nor numbers.
+- `Operator.base_name` strips compilation tags, so a plan prints the action the
+  domain author wrote rather than `move(a,b)#2`.
+- `SearchResult.plan_names(canonical=True)` returns those canonical names.
+- Budget clock checks happen every expansion, not every 256: under LM-cut a
+  single expansion can cost tens of milliseconds, and the coarse interval
+  overshot a short time limit by more than an order of magnitude.
+
 ## [2.0.0] - 2026-07-27
 
 Makes the search **observable**: you can now record it, plot it, watch it live,

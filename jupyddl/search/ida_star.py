@@ -21,7 +21,7 @@ class IDAStarSearch(Planner):
     requires_heuristic = True
     optimal = True
 
-    def search(self, task, heuristic=None, observer=None) -> SearchResult:
+    def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
         stats = SearchStats()
         start = time.perf_counter()
         if observer is not None:
@@ -36,15 +36,16 @@ class IDAStarSearch(Planner):
                 stats.evaluated += 1
             return v
 
-        threshold = h_of(task.init)
-        root = make_root(task.init)
+        start_state = task.initial_state()
+        threshold = h_of(start_state)
+        root = make_root(start_state)
         iteration = 0
         while not math.isinf(threshold):
             if observer is not None:
                 observer.on_bound(float(threshold), iteration, stats)
             iteration += 1
             found, nxt = self._dfs(
-                task, root, threshold, h_of, stats, {task.init}, observer
+                task, root, threshold, h_of, stats, {start_state}, observer
             )
             if found is not None:
                 stats.runtime = time.perf_counter() - start
@@ -82,7 +83,7 @@ class IDAStarSearch(Planner):
             )
         minimum = math.inf
         for op in task.applicable_operators(node.state):
-            succ = op.apply(node.state)
+            succ = task.apply(op, node.state)
             stats.generated += 1
             if succ in on_path:
                 continue
