@@ -30,8 +30,9 @@ native build step, and the core has zero runtime dependencies.
   3.9–3.14. Most of the matrix installs `.[dev]` *without* matplotlib, which is
   what nearly everyone installs and keeps the core honest about not importing
   it; one entry installs `.[dev,viz]` so `jupyddl/viz/` is executed rather than
-  skipped. Six test modules `importorskip` matplotlib, so without that entry
-  the whole charting surface goes untested.
+  skipped. `tests/test_viz.py` and `tests/test_cli_viz.py` `importorskip`
+  matplotlib — 30 tests with it, 4 without — so that one entry is the only
+  thing standing between the charting surface and no coverage at all.
 - **`build`** — builds the sdist and wheel, `twine check`s them, installs the
   wheel into a clean venv and plans with it from outside the repository. It
   deliberately does *not* repeat the lint: it is there to catch packaging

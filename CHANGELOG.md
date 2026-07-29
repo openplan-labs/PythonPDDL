@@ -36,8 +36,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - CI runs the suite on Python 3.13 and 3.14 as well as 3.9–3.12, and lints
   `tools/` alongside `jupyddl` and `tests`.
-- One matrix entry installs the `viz` extra. Six test modules `importorskip`
-  matplotlib, so the entire charting surface was silently skipped in CI.
+- One matrix entry installs the `viz` extra. `tests/test_viz.py` and
+  `tests/test_cli_viz.py` `importorskip` matplotlib, so 26 of their 30 tests —
+  the entire charting surface — were silently skipped in CI.
 - `build` no longer re-runs the lint the `tests` matrix already ran. It builds
   the sdist and wheel, `twine check`s them, installs the wheel into a clean
   environment and plans with it from outside the repository — packaging
