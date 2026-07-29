@@ -7,6 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **`always` was not enforced across the actions timed initial literals compile
+  to.** The invariant went onto the domain's own actions and the goal, on the
+  argument that every state is either taken from by an action or is the final
+  one — but the firing and waiting actions a timed literal compiles to also
+  change facts, and they were exempt. A literal clearing `(safe)` at t=3 and one
+  restoring it at t=4 fire back-to-back, so the unsafe state in between was
+  never checked and the plan was reported valid. Invariants now go onto every
+  action.
 - **The browser bundle is byte-reproducible again.** `tools/build_web.py`
   sorted the files inside each directory but let `os.walk` visit the
   subdirectories in filesystem order, so `jupyddl-sources.json` came out

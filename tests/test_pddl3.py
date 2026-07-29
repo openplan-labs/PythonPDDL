@@ -86,6 +86,47 @@ def test_always_also_constrains_the_final_state():
     assert not result.solved
 
 
+SHUTTER_DOMAIN = """
+(define (domain shutter)
+  (:requirements :adl :durative-actions :timed-initial-literals :constraints)
+  (:predicates (open) (safe) (done))
+  (:constraints (always (safe)))
+  (:durative-action sell
+    :parameters ()
+    :duration (= ?duration 1)
+    :condition (at start (open))
+    :effect (at end (done))))
+"""
+
+
+def test_always_survives_the_actions_timed_literals_compile_to():
+    """The invariant must hold between two timed literals, not just around them.
+
+    ``(at 3 (not (safe)))`` and ``(at 4 (safe))`` fire back-to-back with no
+    domain action in between, so an invariant enforced only on the domain's own
+    actions never sees the unsafe state and the plan looks legal.
+    """
+    _, result = solve(
+        SHUTTER_DOMAIN,
+        "(define (problem s) (:domain shutter)"
+        " (:init (safe) (at 3 (not (safe))) (at 4 (safe)) (at 5 (open)))"
+        " (:goal (done)))",
+    )
+    assert not result.solved
+    assert not result.truncated
+
+
+def test_the_same_instance_is_solvable_without_the_unsafe_window():
+    """Guards against the fix above simply making timed literals unusable."""
+    _, result = solve(
+        SHUTTER_DOMAIN.replace("(:constraints (always (safe)))", ""),
+        "(define (problem s) (:domain shutter)"
+        " (:init (safe) (at 3 (not (safe))) (at 4 (safe)) (at 5 (open)))"
+        " (:goal (done)))",
+    )
+    assert result.solved
+
+
 TOUR_DOMAIN = """
 (define (domain tour)
   (:requirements :adl :constraints)

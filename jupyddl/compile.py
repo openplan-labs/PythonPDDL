@@ -439,7 +439,14 @@ def compile_constraints(domain: Domain, problem: Problem):
             raise UnsupportedFeatureError(f"unsupported constraint '{kind}'")
 
     for invariant in invariants:
-        _add_precondition(domain, invariant)
+        # Every action, not just the domain's own. The coverage argument above
+        # holds only if each state on the trajectory is either taken from by an
+        # action that checks the invariant or is the final state — and the
+        # actions timed initial literals compile to *change facts*. Exempting
+        # them let a plan step through a state the invariant forbade: a literal
+        # that clears `(safe)` at t=3 and one that restores it at t=4 fire
+        # back-to-back with nothing checking the state in between.
+        _add_precondition(domain, invariant, only_domain_actions=False)
         goal_parts.append(invariant)
 
     problem.goal = _conjoin(*goal_parts)
