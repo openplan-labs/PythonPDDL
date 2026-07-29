@@ -79,6 +79,17 @@ def test_every_demo_is_bundled():
         assert demo["title"] and demo["blurb"]
 
 
+def test_bundle_is_ordered_independently_of_the_filesystem(sources):
+    """The bundle is committed, so it must not depend on the walk order.
+
+    ``os.walk`` reports subdirectories in whatever order the filesystem hands
+    them over, which differs between a developer's disk and a CI runner. Left
+    unsorted the same sources produce byte-different JSON, and the staleness
+    check fails for a bundle that is not actually stale.
+    """
+    assert list(sources) == sorted(sources)
+
+
 def test_builder_is_reproducible(tmp_path):
     """Running the builder again must not change the committed bundle."""
     before = {}

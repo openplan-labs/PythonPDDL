@@ -132,10 +132,16 @@ DEMO_ORDER = [
 
 
 def collect_sources() -> dict:
-    """Map ``jupyddl/...py`` -> source text for every browser-safe module."""
+    """Map ``jupyddl/...py`` -> source text for every browser-safe module.
+
+    Sorted, because the bundle is committed: ``os.walk`` hands back
+    subdirectories in whatever order the filesystem reports, so an unsorted
+    walk produces a byte-different ``jupyddl-sources.json`` on a different
+    machine even though nothing changed.
+    """
     sources = {}
     for dirpath, dirnames, filenames in os.walk(PACKAGE):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         for filename in sorted(filenames):
             if not filename.endswith(".py"):
                 continue
@@ -209,7 +215,7 @@ def main() -> int:
     demos = collect_demos()
 
     with open(os.path.join(OUT, "jupyddl-sources.json"), "w", encoding="utf-8") as fh:
-        json.dump(sources, fh)
+        json.dump(sources, fh, sort_keys=True)
     with open(os.path.join(OUT, "demos.json"), "w", encoding="utf-8") as fh:
         json.dump(demos, fh)
     capabilities = collect_capabilities()
