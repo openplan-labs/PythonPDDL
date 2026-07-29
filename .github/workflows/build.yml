@@ -1,29 +1,52 @@
 name: build
 
+# What gets published, rather than what is in the working tree. `tests.yml`
+# already lints and tests the sources across the whole matrix; running the same
+# flake8 twice bought no extra signal, so this workflow builds the
+# distributions instead and proves the wheel stands on its own — no source
+# tree, no demos folder, no editable install.
+
 on: [push]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
-
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
-      with:
-        submodules: recursive
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v7
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install package (dev extras)
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install -e ".[dev]"
-    - name: Lint with flake8
-      run: |
-        flake8 jupyddl tests --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 jupyddl tests --count --statistics
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Build the sdist and the wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          twine check dist/*
+
+      - name: Install the wheel into a clean environment
+        run: |
+          python -m venv /tmp/fresh
+          /tmp/fresh/bin/pip install dist/*.whl
+
+      - name: Plan with the installed package, away from the repository
+        working-directory: /tmp
+        run: |
+          /tmp/fresh/bin/python -c "import jupyddl; print(jupyddl.__version__)"
+          /tmp/fresh/bin/jupyddl generate gripper -n 3 --seed 1 -o /tmp/smoke
+          /tmp/fresh/bin/jupyddl solve \
+            /tmp/smoke/gripper-03-1/domain.pddl \
+            /tmp/smoke/gripper-03-1/problem.pddl \
+            -s astar -H lmcut | tee /tmp/plan.txt
+          grep -q "Valid: True" /tmp/plan.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/

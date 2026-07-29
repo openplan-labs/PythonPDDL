@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jupyddl"
-version = "1.0.0"
+version = "2.2.0"
 description = "A pure-Python PDDL planning framework: parser, grounding, classical-to-SOTA planners, heuristics and benchmarking."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -21,7 +21,9 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.5"]
+# 3.6 is the floor for the constrained-layout engine API the charts rely on
+# (``layout="constrained"`` plus ``Figure.get_layout_engine``).
+viz = ["matplotlib>=3.6"]
 dev = ["pytest>=7", "pytest-cov>=4", "flake8>=6", "black>=23"]
 
 [project.scripts]
@@ -33,6 +35,19 @@ Repository = "https://github.com/APLA-Toolbox/PythonPDDL"
 
 [tool.hatch.build.targets.wheel]
 packages = ["jupyddl"]
+
+# An sdist should carry what is needed to build and test the package, not the
+# project's marketing. Left to its defaults hatchling packed the promo video
+# and every screenshot and chart, making a 6.6 MB sdist against a 105 KB wheel.
+# `web/` stays: `tests/test_web_bundle.py` reads it, so dropping it would leave
+# an sdist whose own test suite fails.
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".github/**",
+    "docs/images/**",
+    "promo/**",
+    "logs/**",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

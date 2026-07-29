@@ -1,3 +1,8 @@
+# `tests` is the *workflow* name; the checks it reports are the matrix jobs,
+# `test (ubuntu-latest, 3.12, dev)` and friends. A rule keyed on
+# `check-success=tests` therefore matched nothing and the auto-merge never
+# fired. Match the jobs by pattern instead, so adding a Python version to the
+# matrix does not silently break merging again.
 pull_request_rules:
   - name: Assign the main reviewers
     conditions:
@@ -11,7 +16,7 @@ pull_request_rules:
   - name: Automatic merge on approval
     conditions:
       - "#approved-reviews-by>=1"
-      - check-success=tests
+      - check-success~=^test \(
       - check-success=build
       - check-success=CodeFactor
     actions:

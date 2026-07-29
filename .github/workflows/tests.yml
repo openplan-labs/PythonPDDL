@@ -2,6 +2,10 @@ name: tests
 
 on: [push]
 
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -9,7 +13,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
+        # The charts are an optional extra, so most of the matrix runs without
+        # matplotlib — that is the configuration nearly every user installs,
+        # and it proves the core stays importable without it. One entry pulls
+        # it in so `jupyddl/viz/` is actually executed rather than skipped.
+        extras: [dev]
+        include:
+          - os: ubuntu-latest
+            python-version: '3.12'
+            extras: dev,viz
+
+    name: test (${{ matrix.os }}, ${{ matrix.python-version }}, ${{ matrix.extras }})
+
+    env:
+      MPLBACKEND: Agg
 
     steps:
       - uses: actions/checkout@v7
@@ -19,14 +37,14 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install package (dev extras)
+      - name: Install package (${{ matrix.extras }} extras)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[${{ matrix.extras }}]"
       - name: Lint with flake8
         run: |
-          flake8 jupyddl tests --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 jupyddl tests --count --statistics
+          flake8 jupyddl tests tools --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 jupyddl tests tools --count --statistics
       - name: Test with pytest
         run: |
           pytest --cov=jupyddl --cov-report=xml

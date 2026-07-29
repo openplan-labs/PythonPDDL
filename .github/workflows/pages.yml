@@ -1,0 +1,60 @@
+name: pages
+
+# Publish the browser playground to GitHub Pages. The page runs the real
+# library under Pyodide, so "deploying" is just bundling the package sources
+# and the demo instances alongside the static assets.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  # Not called `build`: .mergify.yml keys a merge rule on a check named
+  # `build`, and that must mean the packaging workflow, not this one.
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Bundle jupyddl and the demos for the browser
+        run: python tools/build_web.py
+
+      - name: Fail if the committed bundle is stale
+        run: |
+          if ! git diff --quiet -- web/dist; then
+            echo "web/dist is out of date. Run 'python tools/build_web.py' and commit the result." >&2
+            git diff --stat -- web/dist >&2
+            exit 1
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: bundle
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

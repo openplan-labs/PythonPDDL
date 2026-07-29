@@ -1,11 +1,18 @@
-"""Command-line interface: ``jupyddl solve`` and ``jupyddl benchmark``."""
+"""Command-line interface.
+
+``solve``, ``benchmark``, ``animate``, ``demo``, ``requirements`` and
+``generate``. Every long-running command accepts ``--max-expansions`` and
+``--time-limit``; when a search stops on one of those it says so rather than
+reporting the instance unsolvable.
+"""
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
-from .api import build_task, solve_task, validate_plan
+from .api import build_task, solve_task, trace_search, validate_plan
 from .benchmark import (
     discover_instances,
     plot_summary,
@@ -14,7 +21,9 @@ from .benchmark import (
     to_csv,
 )
 from .heuristics import HEURISTICS
-from .search import PLANNERS
+from .search import INFORMED_PLANNERS, PLANNERS
+
+INFORMED = set(INFORMED_PLANNERS)
 
 
 def _add_solve(sub):
@@ -28,6 +37,37 @@ def _add_solve(sub):
     p.add_argument(
         "-w", "--weight", type=float, default=2.0, help="weight for weighted A*"
     )
+    p.add_argument(
+        "--live",
+        action="store_true",
+        help="watch the search live in the terminal (no dependencies)",
+    )
+    p.add_argument("--trace", default=None, help="write the search trace as JSON")
+    p.add_argument(
+        "--plot",
+        default=None,
+        help="write a four-panel search-progress chart (PNG; needs the viz extra)",
+    )
+    p.add_argument(
+        "--tree", default=None, help="write the radial search-wavefront chart (PNG)"
+    )
+    p.add_argument(
+        "--plan-plot", default=None, help="write the plan timeline chart (PNG)"
+    )
+    p.add_argument("--dark", action="store_true", help="render charts for dark mode")
+    p.add_argument(
+        "--max-expansions",
+        type=int,
+        default=None,
+        help="stop after this many node expansions and report what was found",
+    )
+    p.add_argument(
+        "--time-limit",
+        type=float,
+        default=None,
+        help="stop after this many seconds and report what was found",
+    )
+    p.add_argument("--quiet", action="store_true", help="do not print the plan")
     p.set_defaults(func=_cmd_solve)
 
 
@@ -38,26 +78,149 @@ def _add_benchmark(sub):
     p.add_argument("--heuristic", default="hff", help="heuristic for informed planners")
     p.add_argument("--csv", default=None, help="write per-run results to this CSV")
     p.add_argument("--plot", default=None, help="write a comparison bar chart (PNG)")
+    p.add_argument(
+        "--dashboard",
+        default=None,
+        help="write the full benchmark dashboard: coverage, effort, time, heatmap",
+    )
     p.add_argument("--metric", default="expanded")
+    p.add_argument("--dark", action="store_true", help="render charts for dark mode")
+    p.add_argument(
+        "--max-expansions",
+        type=int,
+        default=None,
+        help="stop after this many node expansions and report what was found",
+    )
+    p.add_argument(
+        "--time-limit",
+        type=float,
+        default=None,
+        help="stop after this many seconds and report what was found",
+    )
     p.set_defaults(func=_cmd_benchmark)
+
+
+def _add_animate(sub):
+    p = sub.add_parser("animate", help="replay a search as an animation (MP4 or GIF)")
+    p.add_argument("domain")
+    p.add_argument("problem")
+    p.add_argument("-o", "--output", default="search.mp4")
+    p.add_argument("-s", "--search", default="astar", choices=sorted(PLANNERS))
+    p.add_argument(
+        "-H", "--heuristic", default="lmcut", choices=sorted(HEURISTICS) + ["none"]
+    )
+    p.add_argument("--fps", type=int, default=30)
+    p.add_argument("--seconds", type=float, default=8.0)
+    p.add_argument("--dark", action="store_true")
+    p.set_defaults(func=_cmd_animate)
+
+
+def _add_demo(sub):
+    p = sub.add_parser(
+        "demo",
+        help="run the bundled demo instances and write every chart to a folder",
+    )
+    p.add_argument("-o", "--output", default="gallery", help="output folder")
+    p.add_argument("--root", default="demos", help="folder of demo instances")
+    p.add_argument(
+        "--both-modes",
+        action="store_true",
+        help="render a light and a dark variant of every chart",
+    )
+    p.add_argument(
+        "--animate", action="store_true", help="also render the search animations"
+    )
+    p.set_defaults(func=_cmd_demo)
+
+
+# --------------------------------------------------------------------------
+def _observers(args):
+    """Build the observer for a solve, honouring --live/--trace/--plot."""
+    from .trace import MultiObserver, TraceRecorder
+
+    wants_trace = bool(
+        args.trace
+        or args.plot
+        or getattr(args, "tree", None)
+        or getattr(args, "plan_plot", None)
+    )
+    recorder = TraceRecorder() if wants_trace else None
+    dashboard = None
+    if args.live:
+        from .live import TerminalDashboard
+
+        dashboard = TerminalDashboard()
+    if recorder and dashboard:
+        return MultiObserver(recorder, dashboard), recorder
+    return (dashboard or recorder), recorder
 
 
 def _cmd_solve(args) -> int:
     task = build_task(args.domain, args.problem)
     heuristic = None if args.heuristic == "none" else args.heuristic
     kwargs = {"weight": args.weight} if args.search == "wastar" else {}
-    result = solve_task(task, args.search, heuristic, **kwargs)
+    observer, recorder = _observers(args)
+    result = solve_task(
+        task,
+        args.search,
+        heuristic,
+        observer=observer,
+        max_expansions=args.max_expansions,
+        time_limit=args.time_limit,
+        **kwargs,
+    )
+
+    trace = recorder.trace if recorder else None
+    if trace is not None:
+        if args.trace:
+            trace.save(args.trace)
+            print(f"Wrote trace to {args.trace}")
+        _write_charts(args, trace)
+
     if not result.solved:
-        print("No plan found.")
+        if not args.live:
+            if result.truncated:
+                print(
+                    "No plan found within the budget "
+                    "(the instance may still be solvable)."
+                )
+            else:
+                print("No plan found.")
         _print_stats(result)
         return 1
     valid = validate_plan(task, result.plan)
-    print(f"Plan ({result.plan_length} steps, cost {result.cost}):")
-    for i, op in enumerate(result.plan):
-        print(f"  {i + 1:3d}. {op.name}")
+    visible = task.visible_plan(result.plan)
+    if not args.quiet:
+        header = f"Plan ({len(visible)} steps, cost {result.cost}"
+        if task.temporal:
+            header += f", makespan {task.makespan(result.plan):g}"
+        print(header + "):")
+        for i, op in enumerate(visible):
+            print(f"  {i + 1:3d}. {op.base_name}")
     print(f"Valid: {valid}")
-    _print_stats(result)
+    if not args.live:
+        _print_stats(result)
     return 0 if valid else 2
+
+
+def _write_charts(args, trace) -> None:
+    targets = [
+        (args.plot, "plot_search_progress"),
+        (getattr(args, "tree", None), "plot_search_tree"),
+        (getattr(args, "plan_plot", None), "plot_plan_timeline"),
+    ]
+    if not any(path for path, _ in targets):
+        return
+    try:
+        from . import viz
+    except ImportError as exc:
+        print(f"Charts need the viz extra: {exc}", file=sys.stderr)
+        return
+    for path, function in targets:
+        if not path:
+            continue
+        getattr(viz, function)(trace, path, dark=args.dark)
+        print(f"Wrote {path}")
 
 
 def _cmd_benchmark(args) -> int:
@@ -66,12 +229,16 @@ def _cmd_benchmark(args) -> int:
         print(f"No instances found under {args.root}", file=sys.stderr)
         return 1
     configs = []
-    informed = {"gbfs", "astar", "wastar", "idastar", "ehc"}
     for planner in args.planners.split(","):
         planner = planner.strip()
-        configs.append((planner, args.heuristic if planner in informed else None))
+        configs.append((planner, args.heuristic if planner in INFORMED else None))
 
-    rows = run_benchmark(instances, configs)
+    rows = run_benchmark(
+        instances,
+        configs,
+        max_expansions=args.max_expansions,
+        time_limit=args.time_limit,
+    )
     _print_summary(summarize(rows))
     if args.csv:
         to_csv(rows, args.csv)
@@ -79,6 +246,205 @@ def _cmd_benchmark(args) -> int:
     if args.plot:
         plot_summary(rows, args.plot, metric=args.metric)
         print(f"Wrote plot to {args.plot}")
+    if args.dashboard:
+        from .viz import plot_benchmark_dashboard
+
+        plot_benchmark_dashboard(rows, args.dashboard, dark=args.dark)
+        print(f"Wrote dashboard to {args.dashboard}")
+    return 0
+
+
+def _cmd_animate(args) -> int:
+    from .viz import animate_search
+
+    task = build_task(args.domain, args.problem)
+    heuristic = None if args.heuristic == "none" else args.heuristic
+    _, trace = trace_search(task, args.search, heuristic)
+    animate_search(
+        trace, args.output, dark=args.dark, fps=args.fps, seconds=args.seconds
+    )
+    print(f"Wrote animation to {args.output}")
+    return 0
+
+
+def _add_requirements(sub):
+    p = sub.add_parser(
+        "requirements",
+        help="show which PDDL requirement flags are supported, and how",
+    )
+    p.add_argument(
+        "--support",
+        default=None,
+        help="filter by support level: native, compiled, partial or rejected",
+    )
+    p.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    p.add_argument("--verbose", action="store_true", help="include the full notes")
+    p.set_defaults(func=_cmd_requirements)
+
+
+def _add_generate(sub):
+    from .generator import GENERATORS
+
+    p = sub.add_parser(
+        "generate", help="generate PDDL instances reproducibly from a seed"
+    )
+    p.add_argument("kind", choices=sorted(GENERATORS))
+    p.add_argument("-o", "--output", default=None, help="write into this folder")
+    p.add_argument("-n", "--size", type=int, default=4, help="instance size")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument(
+        "--count",
+        type=int,
+        default=1,
+        help="generate a ladder of instances with increasing size",
+    )
+    p.add_argument(
+        "--step", type=int, default=1, help="size increment between ladder rungs"
+    )
+    p.set_defaults(func=_cmd_generate)
+
+
+def _cmd_requirements(args) -> int:
+    from .requirements import as_rows, summary
+
+    rows = as_rows()
+    if args.support:
+        rows = [row for row in rows if row["support"] == args.support]
+        if not rows:
+            print(
+                f"No requirements with support level '{args.support}'.", file=sys.stderr
+            )
+            return 1
+
+    if args.json:
+        import json
+
+        print(json.dumps({"requirements": rows, "summary": summary()}, indent=2))
+        return 0
+
+    counts = summary()
+    print(
+        f"jupyddl PDDL support: {counts['native']} native, "
+        f"{counts['compiled']} compiled, {counts['partial']} partial, "
+        f"{counts['rejected']} rejected\n"
+    )
+    print(f"{'requirement':<30}{'PDDL':<7}{'support':<11}summary")
+    print("-" * 100)
+    for row in rows:
+        print(f"{row['name']:<30}{row['pddl']:<7}{row['support']:<11}{row['summary']}")
+        if args.verbose and row["note"]:
+            for line in _wrap(row["note"], 92):
+                print(f"{'':<48}{line}")
+    if not args.verbose:
+        print("\nRun with --verbose for the details of each compilation.")
+    return 0
+
+
+def _wrap(text: str, width: int) -> list:
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        if len(current) + len(word) + 1 > width:
+            lines.append(current)
+            current = word
+        else:
+            current = f"{current} {word}".strip()
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _cmd_generate(args) -> int:
+    from .generator import generate, write_instance
+
+    sizes = [args.size + i * args.step for i in range(max(1, args.count))]
+    if args.output is None:
+        if len(sizes) > 1:
+            print(
+                "Generating a ladder needs --output; a single instance can go "
+                "to stdout but several cannot.",
+                file=sys.stderr,
+            )
+            return 1
+        domain, problem = generate(args.kind, size=args.size, seed=args.seed)
+        print(";; ---------- domain.pddl ----------")
+        print(domain)
+        print(";; ---------- problem.pddl ----------")
+        print(problem)
+        return 0
+
+    for size in sizes:
+        folder = write_instance(args.kind, args.output, size=size, seed=args.seed)
+        print(f"Wrote {folder}")
+    return 0
+
+
+def _cmd_demo(args) -> int:
+    """Render the whole gallery: per-instance charts plus a benchmark dashboard."""
+    from .viz import (
+        plot_benchmark_dashboard,
+        plot_plan_timeline,
+        plot_planner_comparison,
+        plot_search_progress,
+        plot_search_tree,
+    )
+
+    instances = discover_instances(args.root)
+    if not instances:
+        print(f"No instances found under {args.root}", file=sys.stderr)
+        return 1
+    os.makedirs(args.output, exist_ok=True)
+    modes = [False, True] if args.both_modes else [False]
+
+    configs = [("astar", "lmcut"), ("astar", "hmax"), ("gbfs", "hff"), ("bfs", None)]
+    for instance in instances:
+        print(f"-- {instance.name}")
+        try:
+            task = build_task(instance.domain, instance.problem)
+        except Exception as exc:
+            print(f"   skipped: {type(exc).__name__}: {exc}")
+            continue
+        traces = []
+        for planner, heuristic in configs:
+            try:
+                _, trace = trace_search(task, planner, heuristic)
+                traces.append(trace)
+            except Exception as exc:
+                print(f"   {planner}/{heuristic}: {type(exc).__name__}: {exc}")
+        if not traces:
+            continue
+        for dark in modes:
+            suffix = "-dark" if dark else ""
+            base = os.path.join(args.output, instance.name)
+            plot_search_progress(traces[0], f"{base}-progress{suffix}.png", dark=dark)
+            plot_search_tree(traces[0], f"{base}-tree{suffix}.png", dark=dark)
+            plot_plan_timeline(traces[0], f"{base}-plan{suffix}.png", dark=dark)
+            plot_planner_comparison(traces, f"{base}-compare{suffix}.png", dark=dark)
+        if args.animate:
+            from .viz import animate_search
+
+            animate_search(
+                traces[0], os.path.join(args.output, f"{instance.name}-search.mp4")
+            )
+
+    rows = run_benchmark(
+        instances,
+        [
+            ("astar", "lmcut"),
+            ("astar", "hmax"),
+            ("gbfs", "hff"),
+            ("ehc", "hff"),
+            ("bfs", None),
+            ("dijkstra", None),
+        ],
+    )
+    to_csv(rows, os.path.join(args.output, "benchmark.csv"))
+    for dark in modes:
+        suffix = "-dark" if dark else ""
+        plot_benchmark_dashboard(
+            rows, os.path.join(args.output, f"benchmark{suffix}.png"), dark=dark
+        )
+    print(f"\nGallery written to {args.output}/")
     return 0
 
 
@@ -107,6 +473,10 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     _add_solve(sub)
     _add_benchmark(sub)
+    _add_animate(sub)
+    _add_demo(sub)
+    _add_requirements(sub)
+    _add_generate(sub)
     args = parser.parse_args(argv)
     return args.func(args)
 

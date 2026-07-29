@@ -38,3 +38,32 @@ def examples_available():
     if not os.path.isdir(EXAMPLES) or not os.listdir(EXAMPLES):
         pytest.skip("pddl-examples submodule not initialised")
     return EXAMPLES
+
+
+DEMOS = os.path.join(REPO_ROOT, "demos")
+
+# Optimal costs for the bundled demo instances. Hanoi is the strongest check:
+# five discs must take exactly 2**5 - 1 moves.
+DEMO_OPTIMAL_COST = {
+    "gripper": 17,
+    "blocksworld8": 16,
+    "hanoi": 31,
+    "logistics": 24,
+    "sokoban": 11,
+    "elevator": 14,
+    "rovers": 11,
+    "network": 7,
+    "numeric-transport": 11,
+    "workshop": 33,
+    "errands": 10,
+    "timed-market": 4,
+}
+
+# Instances an optimal planner cannot finish in reasonable time; the test suite
+# checks these with a satisficing planner instead.
+SATISFICING_ONLY = {"blocksworld12"}
+
+
+def demo_paths(name: str):
+    folder = os.path.join(DEMOS, name)
+    return os.path.join(folder, "domain.pddl"), os.path.join(folder, "problem.pddl")

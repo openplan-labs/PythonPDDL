@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>jupyddl workbench — PDDL planning in your browser</title>
+<meta name="description" content="Write PDDL, pick a planner and a heuristic, watch a real A* search run, and sweep a whole instance-by-configuration experiment — all in the browser. jupyddl is a pure-Python PDDL planning framework." />
+<link rel="stylesheet" href="style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧭</text></svg>" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">🧭</span>
+    <div>
+      <h1>jupyddl <span class="tag">workbench</span></h1>
+      <p class="sub">A pure-Python PDDL planner — running for real, in this tab.</p>
+    </div>
+  </div>
+  <nav class="viewnav" aria-label="Sections">
+    <button class="navlink active" data-view="solve" aria-current="page">Solve</button>
+    <button class="navlink" data-view="experiment">Experiment</button>
+    <button class="navlink" data-view="requirements">PDDL support</button>
+    <button class="navlink" data-view="generate">Generate</button>
+  </nav>
+  <div class="topbar-actions">
+    <a class="ghost" href="https://github.com/APLA-Toolbox/PythonPDDL">GitHub</a>
+    <button id="theme-toggle" class="ghost" type="button" aria-label="Switch colour theme">
+      <span aria-hidden="true">◐</span> Theme
+    </button>
+  </div>
+</header>
+
+<div id="boot" class="boot">
+  <div class="boot-inner">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="boot-text">Starting the Python runtime…</p>
+    <p class="boot-note">The planner runs entirely in your browser. Nothing is uploaded.</p>
+  </div>
+</div>
+
+<main id="app" hidden>
+
+  <!-- ================================================== SOLVE =========== -->
+  <section class="view active" id="view-solve">
+    <div class="controls" aria-label="Run configuration">
+      <div class="field">
+        <label for="demo">Instance</label>
+        <select id="demo"></select>
+      </div>
+      <div class="field">
+        <label for="planner">Planner</label>
+        <select id="planner"></select>
+      </div>
+      <div class="field">
+        <label for="heuristic">Heuristic</label>
+        <select id="heuristic"></select>
+      </div>
+      <div class="field narrow">
+        <label for="limit-nodes">Max nodes</label>
+        <input id="limit-nodes" type="number" min="0" step="1000" placeholder="none" />
+      </div>
+      <div class="field narrow">
+        <label for="limit-seconds">Time limit (s)</label>
+        <input id="limit-seconds" type="number" min="0" step="1" placeholder="none" />
+      </div>
+      <div class="field grow">
+        <span class="blurb" id="blurb"></span>
+        <span class="tagrow" id="tagrow"></span>
+      </div>
+      <button id="run" class="primary" type="button">Run search</button>
+    </div>
+
+    <div class="grid">
+      <div class="pane editors">
+        <div class="pane-head">
+          <h2>PDDL</h2>
+          <div class="tabs" role="tablist">
+            <button class="tab active" role="tab" data-tab="domain" aria-selected="true">domain.pddl</button>
+            <button class="tab" role="tab" data-tab="problem" aria-selected="false">problem.pddl</button>
+          </div>
+        </div>
+        <textarea id="domain" class="editor" spellcheck="false" aria-label="PDDL domain"></textarea>
+        <textarea id="problem" class="editor" spellcheck="false" hidden aria-label="PDDL problem"></textarea>
+        <button id="inspect" class="ghost small wide" type="button">Ground without solving</button>
+      </div>
+
+      <div class="pane">
+        <div class="pane-head"><h2>Live search</h2><span class="hint" id="task-info"></span></div>
+        <div class="stats">
+          <div class="stat"><span class="stat-value" id="s-expanded">0</span><span class="stat-label">expanded</span></div>
+          <div class="stat"><span class="stat-value" id="s-generated">0</span><span class="stat-label">generated</span></div>
+          <div class="stat"><span class="stat-value" id="s-open">0</span><span class="stat-label">frontier</span></div>
+          <div class="stat"><span class="stat-value" id="s-time">0.00s</span><span class="stat-label">elapsed</span></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-head">
+            <h3>Cost estimates</h3>
+            <div class="legend" id="legend-cost"></div>
+          </div>
+          <div class="chart-host" id="chart-cost"></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-head">
+            <h3>Frontier size</h3>
+            <span class="hint">nodes waiting on the open list</span>
+          </div>
+          <div class="chart-host short" id="chart-open"></div>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="pane-head">
+          <h2>Search wavefront</h2>
+          <span class="hint">ring = depth · colour = h</span>
+        </div>
+        <div class="wavefront-host">
+          <canvas id="wavefront" aria-label="Radial view of the expanded search nodes"></canvas>
+        </div>
+        <div class="legend spread">
+          <span class="legend-item"><i class="dot low"></i> low h (near the goal)</span>
+          <span class="legend-item"><i class="dot high"></i> high h (far away)</span>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="pane-head">
+          <h2>Result</h2>
+          <button id="copy-plan" class="ghost small" type="button" hidden>Copy plan</button>
+        </div>
+        <p class="verdict" id="verdict"></p>
+        <div id="plan-empty" class="empty">Run a search to see the plan.</div>
+        <ol id="plan" class="plan" hidden></ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= EXPERIMENT =========== -->
+  <section class="view" id="view-experiment">
+    <div class="pane wide">
+      <div class="pane-head">
+        <h2>Experiment</h2>
+        <span class="hint">every configuration runs against the same grounding</span>
+      </div>
+      <div class="matrix">
+        <fieldset class="picker">
+          <legend>Instances</legend>
+          <div class="checklist" id="pick-instances"></div>
+          <div class="picker-actions">
+            <button class="ghost small" type="button" data-all="pick-instances">All</button>
+            <button class="ghost small" type="button" data-none="pick-instances">None</button>
+          </div>
+        </fieldset>
+        <fieldset class="picker">
+          <legend>Planners</legend>
+          <div class="checklist" id="pick-planners"></div>
+          <div class="picker-actions">
+            <button class="ghost small" type="button" data-all="pick-planners">All</button>
+            <button class="ghost small" type="button" data-none="pick-planners">None</button>
+          </div>
+        </fieldset>
+        <fieldset class="picker">
+          <legend>Heuristics</legend>
+          <div class="checklist" id="pick-heuristics"></div>
+          <div class="picker-actions">
+            <button class="ghost small" type="button" data-all="pick-heuristics">All</button>
+            <button class="ghost small" type="button" data-none="pick-heuristics">None</button>
+          </div>
+        </fieldset>
+        <fieldset class="picker limits">
+          <legend>Budget per run</legend>
+          <label class="inline">Max nodes
+            <input id="exp-nodes" type="number" min="0" step="1000" value="50000" />
+          </label>
+          <label class="inline">Time limit (s)
+            <input id="exp-seconds" type="number" min="0" step="1" value="10" />
+          </label>
+          <p class="hint">
+            A run that hits its budget is marked <em>truncated</em> and does not
+            count as unsolvable.
+          </p>
+        </fieldset>
+      </div>
+      <div class="run-row">
+        <button id="run-experiment" class="primary" type="button">Run experiment</button>
+        <span class="hint" id="exp-status">Nothing queued.</span>
+        <span class="spacer"></span>
+        <button id="export-csv" class="ghost small" type="button" disabled>Download CSV</button>
+        <button id="export-json" class="ghost small" type="button" disabled>Download JSON</button>
+      </div>
+      <div class="progressbar" id="exp-progress" hidden><div id="exp-progress-fill"></div></div>
+    </div>
+
+    <div class="pane wide" id="exp-results-pane" hidden>
+      <div class="pane-head">
+        <h2>Results</h2>
+        <span class="hint">click a column heading to sort</span>
+      </div>
+      <div class="table-scroll">
+        <table id="exp-table" class="data-table sortable">
+          <caption id="exp-caption">Experiment results</caption>
+          <thead>
+            <tr>
+              <th scope="col" data-key="instance">Instance</th>
+              <th scope="col" data-key="config">Configuration</th>
+              <th scope="col" data-key="solved">Solved</th>
+              <th scope="col" data-key="cost" class="num">Cost</th>
+              <th scope="col" data-key="length" class="num">Length</th>
+              <th scope="col" data-key="expanded" class="num">Expanded</th>
+              <th scope="col" data-key="generated" class="num">Generated</th>
+              <th scope="col" data-key="evaluated" class="num">Evaluated</th>
+              <th scope="col" data-key="runtime" class="num">Runtime (ms)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="chart-block">
+        <div class="chart-head"><h3>Total nodes expanded per configuration <span class="hint">log scale</span></h3></div>
+        <div id="exp-chart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================== REQUIREMENTS =========== -->
+  <section class="view" id="view-requirements">
+    <div class="pane wide">
+      <div class="pane-head">
+        <h2>PDDL requirement support</h2>
+        <span class="hint" id="req-summary"></span>
+      </div>
+      <p class="prose">
+        Every PDDL requirement flag this planner recognises, and what it actually
+        does with it. A <strong>rejected</strong> flag is refused at parse time
+        with an explanation — it is never silently ignored, because a silently
+        ignored requirement produces plans that are wrong rather than absent.
+      </p>
+      <div class="filterbar" id="req-filters"></div>
+      <div class="table-scroll">
+        <table class="data-table" id="req-table">
+          <caption>Requirement support matrix</caption>
+          <thead>
+            <tr>
+              <th scope="col">Requirement</th>
+              <th scope="col">PDDL</th>
+              <th scope="col">Support</th>
+              <th scope="col">What jupyddl does</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================== GENERATE =========== -->
+  <section class="view" id="view-generate">
+    <div class="pane wide">
+      <div class="pane-head">
+        <h2>Generate an instance</h2>
+        <span class="hint">same seed, same bytes — every time</span>
+      </div>
+      <p class="prose">
+        Benchmarks need a difficulty ladder, not a single instance. These
+        generators are seeded, so a published experiment can be reproduced
+        exactly: the same <em>kind</em>, <em>size</em> and <em>seed</em> always
+        produce byte-identical PDDL.
+      </p>
+      <div class="controls inner">
+        <div class="field">
+          <label for="gen-kind">Generator</label>
+          <select id="gen-kind"></select>
+        </div>
+        <div class="field narrow">
+          <label for="gen-size">Size</label>
+          <input id="gen-size" type="number" min="1" max="40" value="6" />
+        </div>
+        <div class="field narrow">
+          <label for="gen-seed">Seed</label>
+          <input id="gen-seed" type="number" min="0" value="0" />
+        </div>
+        <div class="field grow"><span class="blurb" id="gen-blurb"></span></div>
+        <button id="generate" class="primary" type="button">Generate</button>
+        <button id="gen-to-solve" class="secondary" type="button" disabled>Open in Solve</button>
+      </div>
+      <div class="gen-output">
+        <div>
+          <h3>domain.pddl</h3>
+          <pre class="code" id="gen-domain">—</pre>
+        </div>
+        <div>
+          <h3>problem.pddl</h3>
+          <pre class="code" id="gen-problem">—</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="error" class="error" hidden></div>
+
+  <footer class="footer">
+    <span id="build-info"></span>
+    <span>Everything on this page is computed locally by
+      <a href="https://github.com/APLA-Toolbox/PythonPDDL">jupyddl</a>
+      running under <a href="https://pyodide.org">Pyodide</a>.</span>
+  </footer>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

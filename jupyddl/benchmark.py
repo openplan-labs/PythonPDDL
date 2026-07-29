@@ -41,6 +41,7 @@ class BenchmarkRow:
     evaluated: int
     runtime: float
     error: str = ""
+    truncated: bool = False
 
 
 def discover_instances(root: str) -> list:
@@ -54,11 +55,16 @@ def discover_instances(root: str) -> list:
     return instances
 
 
-def run_benchmark(instances, configs) -> list:
+def run_benchmark(instances, configs, max_expansions=None, time_limit=None) -> list:
     """Run each ``(planner, heuristic[, kwargs])`` config on each instance.
 
     ``configs`` entries are ``(planner_name, heuristic_name_or_None)`` or
     ``(planner_name, heuristic_name_or_None, planner_kwargs)``.
+
+    ``max_expansions`` and ``time_limit`` bound every individual run, which is
+    what keeps one pathological instance from stalling a whole benchmark. A run
+    that stops on its budget is recorded with ``truncated=True`` and does not
+    count towards coverage -- "we stopped looking" is not "no plan exists".
     """
     rows: list = []
     for inst in instances:
@@ -89,7 +95,14 @@ def run_benchmark(instances, configs) -> list:
             heuristic = cfg[1]
             kwargs = cfg[2] if len(cfg) > 2 else {}
             try:
-                result = solve_task(task, planner, heuristic, **kwargs)
+                result = solve_task(
+                    task,
+                    planner,
+                    heuristic,
+                    max_expansions=max_expansions,
+                    time_limit=time_limit,
+                    **kwargs,
+                )
                 valid = bool(result.solved and validate_plan(task, result.plan))
                 rows.append(
                     BenchmarkRow(
@@ -104,6 +117,8 @@ def run_benchmark(instances, configs) -> list:
                         result.stats.generated,
                         result.stats.evaluated,
                         round(result.stats.runtime, 6),
+                        "",
+                        result.stats.truncated,
                     )
                 )
             except Exception as exc:  # keep the benchmark going on a single failure
