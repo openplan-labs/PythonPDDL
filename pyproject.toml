@@ -36,5 +36,18 @@ Repository = "https://github.com/APLA-Toolbox/PythonPDDL"
 [tool.hatch.build.targets.wheel]
 packages = ["jupyddl"]
 
+# An sdist should carry what is needed to build and test the package, not the
+# project's marketing. Left to its defaults hatchling packed the promo video
+# and every screenshot and chart, making a 6.6 MB sdist against a 105 KB wheel.
+# `web/` stays: `tests/test_web_bundle.py` reads it, so dropping it would leave
+# an sdist whose own test suite fails.
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".github/**",
+    "docs/images/**",
+    "promo/**",
+    "logs/**",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

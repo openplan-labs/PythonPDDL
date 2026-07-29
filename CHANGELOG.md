@@ -24,6 +24,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   main; `web/dist` embeds those sources verbatim and `pages` refuses to deploy a
   bundle that has drifted, so the reformat could leave main undeployable. The
   rebuild now rides along in the same commit.
+- **The sdist shipped 6.6 MB of marketing.** Hatchling's defaults packed the
+  promo video, every screenshot and every documentation chart alongside a 105 KB
+  wheel. Now 235 KB, and it still builds, installs and passes its own suite —
+  which two parser tests previously broke, hard-failing without the
+  `pddl-examples` submodule instead of skipping like the other 156.
 - **Mergify's auto-merge rule matched no check.** It required
   `check-success=tests`, which is the *workflow* name — the checks are the
   matrix jobs (`test (ubuntu-latest, 3.12, dev)`), so the rule never fired.

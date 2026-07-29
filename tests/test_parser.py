@@ -70,7 +70,7 @@ def test_parse_problem_structure():
     assert len(prob.init) == 2
 
 
-def test_quantified_goal_captured():
+def test_quantified_goal_captured(examples_available):
     dom, prob = paths("flip")
     problem = parse_problem_file(prob)
     # `forall` survives parsing as a quantifier node; the grounder expands it
@@ -80,7 +80,7 @@ def test_quantified_goal_captured():
     ), "forall goal should be captured as a quantifier"
 
 
-def test_numeric_fluent_is_unsupported():
+def test_numeric_fluent_is_unsupported(examples_available):
     dom, _ = paths("grid")
     with pytest.raises(UnsupportedFeatureError):
         parse_domain_file(dom)
