@@ -19,14 +19,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  # Not called `build`: .mergify.yml keys a merge rule on a check named
+  # `build`, and that must mean the packaging workflow, not this one.
+  bundle:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -48,7 +50,7 @@ jobs:
           path: web
 
   deploy:
-    needs: build
+    needs: bundle
     runs-on: ubuntu-latest
     environment:
       name: github-pages

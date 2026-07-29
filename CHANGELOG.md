@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The browser bundle is byte-reproducible again.** `tools/build_web.py`
+  sorted the files inside each directory but let `os.walk` visit the
+  subdirectories in filesystem order, so `jupyddl-sources.json` came out
+  byte-different on a CI runner and the staleness check failed on a bundle that
+  was not stale.
+- **`format` no longer strands `pages`.** It reformats `jupyddl/` and commits to
+  main; `web/dist` embeds those sources verbatim and `pages` refuses to deploy a
+  bundle that has drifted, so the reformat could leave main undeployable. The
+  rebuild now rides along in the same commit.
+- **Mergify's auto-merge rule matched no check.** It required
+  `check-success=tests`, which is the *workflow* name — the checks are the
+  matrix jobs (`test (ubuntu-latest, 3.12, dev)`), so the rule never fired.
+
+### Changed
+- CI runs the suite on Python 3.13 and 3.14 as well as 3.9–3.12, and lints
+  `tools/` alongside `jupyddl` and `tests`.
+- One matrix entry installs the `viz` extra. Six test modules `importorskip`
+  matplotlib, so the entire charting surface was silently skipped in CI.
+- `build` no longer re-runs the lint the `tests` matrix already ran. It builds
+  the sdist and wheel, `twine check`s them, installs the wheel into a clean
+  environment and plans with it from outside the repository — packaging
+  breakage an editable install cannot show.
+- `actions/checkout` v4 → v7, `actions/setup-python` v5 → v7,
+  `codecov/codecov-action` v4 → v7 (#146, #150, #145); the `format` job runs on
+  Python 3.14 (#149); the Mergify config drops the deprecated
+  `delete_head_branch` block (#143).
+
 ## [2.2.0] - 2026-07-28
 
 Closes the PDDL gap: 20 of the 21 requirement flags are now supported, up from

@@ -25,6 +25,26 @@ native build step, and the core has zero runtime dependencies.
   or `... benchmark demos --dashboard out.png`. Installed as `jupyddl` too.
   Also `jupyddl animate` (MP4/GIF replay) and `jupyddl demo` (full chart gallery).
 
+### What CI actually checks
+- **`tests`** — lint (`flake8 jupyddl tests tools`) and the suite on Python
+  3.9–3.14. Most of the matrix installs `.[dev]` *without* matplotlib, which is
+  what nearly everyone installs and keeps the core honest about not importing
+  it; one entry installs `.[dev,viz]` so `jupyddl/viz/` is executed rather than
+  skipped. Six test modules `importorskip` matplotlib, so without that entry
+  the whole charting surface goes untested.
+- **`build`** — builds the sdist and wheel, `twine check`s them, installs the
+  wheel into a clean venv and plans with it from outside the repository. It
+  deliberately does *not* repeat the lint: it is there to catch packaging
+  breakage (a module missing from the wheel, an entry point that does not
+  resolve), which an editable install hides.
+- **`format`** — runs `black` on a push to main and commits the result. It
+  rebuilds `web/dist` in the same commit; reformatting a bundled source and
+  committing without the rebuild would leave main in a state where `pages`
+  refuses to deploy.
+- **`pages`** — bundles, refuses to deploy a stale `web/dist`, then deploys.
+  Its job is called `bundle`, not `build`, because `.mergify.yml` keys a merge
+  rule on a check named `build` and that has to mean the packaging workflow.
+
 ### Layout beyond the core
 - `jupyddl/requirements.py` — **the source of truth** for what every PDDL
   requirement flag does here. Change support for a feature *here first*; the
@@ -87,7 +107,10 @@ planners must go through the task rather than the operator to honour them:
   `jupyddl/` (including a `black` reformat) run `python tools/build_web.py` and
   commit the result, or `tests/test_web_bundle.py` and the Pages workflow fail.
   The bundle deliberately excludes `jupyddl/viz/` (matplotlib is not loaded in
-  the browser).
+  the browser). The builder must stay **byte-reproducible**: it sorts both the
+  directory walk and the JSON keys, because an unsorted `os.walk` bundles the
+  same sources in a disk-dependent order and the staleness check then fails on
+  a bundle that is not stale.
 - **The playground's Python lives in `web/bootstrap.py`**, fetched at runtime
   rather than embedded in `worker.js`. Do not inline it back into a JS template
   literal: reStructuredText double-backticks in a docstring terminate the
