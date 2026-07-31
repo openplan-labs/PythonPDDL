@@ -1,7 +1,7 @@
 """Command-line interface.
 
-``solve``, ``benchmark``, ``animate``, ``demo``, ``requirements`` and
-``generate``. Every long-running command accepts ``--max-expansions`` and
+``solve``, ``benchmark``, ``animate``, ``demo``, ``requirements``, ``generate``
+and ``learn``. Every long-running command accepts ``--max-expansions`` and
 ``--time-limit``; when a search stops on one of those it says so rather than
 reporting the instance unsolvable.
 """
@@ -20,10 +20,34 @@ from .benchmark import (
     summarize,
     to_csv,
 )
-from .heuristics import HEURISTICS
+from .heuristics import HEURISTICS, LOADERS
 from .search import INFORMED_PLANNERS, PLANNERS
 
 INFORMED = set(INFORMED_PLANNERS)
+
+
+def heuristic_spec(value: str) -> str:
+    """Validate ``-H``: a registry name, ``none``, or ``kind:argument``.
+
+    ``choices=`` cannot express this — a trained heuristic is identified by a
+    path that does not exist until someone trains one — so the check is a type
+    function instead. It still rejects typos eagerly, which is the only reason
+    ``choices=`` was worth having.
+    """
+    if value in HEURISTICS or value == "none":
+        return value
+    kind, sep, argument = value.partition(":")
+    if sep and kind in LOADERS:
+        if not argument:
+            raise argparse.ArgumentTypeError(
+                f"'{kind}:' needs an argument, e.g. {kind}:model.json"
+            )
+        return value
+    raise argparse.ArgumentTypeError(
+        f"unknown heuristic '{value}'; expected one of "
+        f"{sorted(HEURISTICS) + ['none']} "
+        f"or {'/'.join(sorted(LOADERS))}:<argument>"
+    )
 
 
 def _add_solve(sub):
@@ -32,7 +56,12 @@ def _add_solve(sub):
     p.add_argument("problem")
     p.add_argument("-s", "--search", default="astar", choices=sorted(PLANNERS))
     p.add_argument(
-        "-H", "--heuristic", default="lmcut", choices=sorted(HEURISTICS) + ["none"]
+        "-H",
+        "--heuristic",
+        default="lmcut",
+        type=heuristic_spec,
+        metavar="NAME",
+        help="a heuristic name, none, or learned:<model.json>",
     )
     p.add_argument(
         "-w", "--weight", type=float, default=2.0, help="weight for weighted A*"
@@ -107,7 +136,12 @@ def _add_animate(sub):
     p.add_argument("-o", "--output", default="search.mp4")
     p.add_argument("-s", "--search", default="astar", choices=sorted(PLANNERS))
     p.add_argument(
-        "-H", "--heuristic", default="lmcut", choices=sorted(HEURISTICS) + ["none"]
+        "-H",
+        "--heuristic",
+        default="lmcut",
+        type=heuristic_spec,
+        metavar="NAME",
+        help="a heuristic name, none, or learned:<model.json>",
     )
     p.add_argument("--fps", type=int, default=30)
     p.add_argument("--seconds", type=float, default=8.0)
@@ -304,6 +338,151 @@ def _add_generate(sub):
     p.set_defaults(func=_cmd_generate)
 
 
+def _add_learn(sub):
+    from .generator import GENERATORS
+
+    p = sub.add_parser(
+        "learn",
+        help="train a heuristic from solved plans, then reinforce it on search cost",
+        description=(
+            "Generate a ladder of instances, solve the small ones, fit a network "
+            "to the cost-to-go their plans reveal, and optionally tune it against "
+            "the number of nodes search actually expands. Writes a model that "
+            "'-H learned:<path>' accepts everywhere."
+        ),
+    )
+    p.add_argument("kind", choices=sorted(GENERATORS))
+    p.add_argument("-o", "--output", default=None, help="write the model here")
+    p.add_argument(
+        "--sizes",
+        default="3-6",
+        help="training ladder, as 'lo-hi' (default 3-6). Keep these small: they "
+        "have to be solvable optimally",
+    )
+    p.add_argument(
+        "--seeds-per-size",
+        type=int,
+        default=2,
+        help="instances per rung; more seeds usually beats more rungs",
+    )
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--epochs", type=int, default=60)
+    p.add_argument(
+        "--rank-weight",
+        type=float,
+        default=0.8,
+        help="share of the objective spent on ordering rather than magnitude; "
+        "GBFS only reads the order",
+    )
+    p.add_argument(
+        "--dagger",
+        type=int,
+        default=0,
+        metavar="ROUNDS",
+        help="retrain on the states the heuristic's own search visits",
+    )
+    p.add_argument(
+        "--bootstrap",
+        default=None,
+        metavar="LO-HI",
+        help="grow the corpus with harder instances as they become solvable",
+    )
+    p.add_argument(
+        "--cem",
+        type=int,
+        default=0,
+        metavar="ITERATIONS",
+        help="optimise expansions directly (needs instances with headroom; "
+        "see --cem-sizes)",
+    )
+    p.add_argument(
+        "--cem-sizes",
+        default=None,
+        metavar="LO-HI",
+        help="instances to tune search cost on; defaults to a rung above the "
+        "training ladder, because the training ladder has no headroom left",
+    )
+    p.add_argument(
+        "--evaluate",
+        default=None,
+        metavar="LO-HI",
+        help="after training, benchmark against hff/goalcount on these sizes",
+    )
+    p.set_defaults(func=_cmd_learn)
+
+
+def _range(spec: str):
+    """Parse ``'3-6'`` or ``'5'`` into a range."""
+    text = str(spec).strip()
+    if "-" in text:
+        lo, _, hi = text.partition("-")
+        return range(int(lo), int(hi) + 1)
+    return range(int(text), int(text) + 1)
+
+
+def _cmd_learn(args) -> int:
+    from .learn import RLConfig, TrainConfig, learn_heuristic
+    from .learn.pipeline import (
+        evaluate_transfer,
+        summarise_transfer,
+        tasks_from_generator,
+    )
+
+    output = args.output or f"{args.kind}.heur.json"
+    try:
+        bundle = learn_heuristic(
+            args.kind,
+            sizes=_range(args.sizes),
+            seeds_per_size=args.seeds_per_size,
+            seed=args.seed,
+            train_config=TrainConfig(
+                epochs=args.epochs, rank_weight=args.rank_weight, seed=args.seed
+            ),
+            rl_config=RLConfig(seed=args.seed, verbose=True),
+            dagger_rounds=args.dagger,
+            bootstrap_sizes=_range(args.bootstrap) if args.bootstrap else None,
+            cem_iterations=args.cem,
+            cem_sizes=_range(args.cem_sizes) if args.cem_sizes else None,
+            verbose=True,
+        )
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    bundle.save(output)
+    print(f"\nWrote {output}")
+    print(
+        f"  features   {bundle.space.size} over {len(bundle.space.vocabulary)} predicates"
+    )
+    print(f"  parameters {bundle.model.num_parameters}")
+    metrics = bundle.metrics
+    print(
+        f"  held out   MAE {metrics.get('mae', 0):.2f}"
+        f"  top-1 {metrics.get('top1', 0):.3f}"
+        f"  over {metrics.get('held_out_instances', 0)} instances"
+    )
+    print(f"\nUse it:\n  jupyddl solve <domain> <problem> -s gbfs -H learned:{output}")
+
+    if args.evaluate:
+        tasks = tasks_from_generator(
+            args.kind, _range(args.evaluate), seed=args.seed + 7777, seeds_per_size=2
+        )
+        print(f"\nBenchmark on {len(tasks)} unseen instances (gbfs):")
+        rows = evaluate_transfer(bundle, tasks)
+        summary = summarise_transfer(rows)
+        print(
+            f"  {'heuristic':<12}{'coverage':>10}{'expanded':>12}"
+            f"{'seconds':>10}{'cost':>8}"
+        )
+        for name in ["learned"] + [k for k in summary if k != "learned"]:
+            agg = summary[name]
+            print(
+                f"  {name:<12}{agg['coverage']:>10.2f}{agg['mean_expanded']:>12.0f}"
+                f"{agg['mean_seconds']:>10.3f}{agg['mean_cost']:>8.1f}"
+            )
+    return 0
+
+
 def _cmd_requirements(args) -> int:
     from .requirements import as_rows, summary
 
@@ -477,6 +656,7 @@ def main(argv=None) -> int:
     _add_demo(sub)
     _add_requirements(sub)
     _add_generate(sub)
+    _add_learn(sub)
     args = parser.parse_args(argv)
     return args.func(args)
 

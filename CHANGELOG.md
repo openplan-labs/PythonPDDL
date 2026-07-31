@@ -6,6 +6,33 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`jupyddl.learn`: heuristics trained from your own solved plans.** Every
+  solved instance is a labelled trajectory — the cost of a plan's suffix from a
+  state on it is that state's cost-to-go — so a corpus of plans is supervision
+  that already exists. Stdlib-only like the rest of the core; `pip install
+  jupyddl[learn]` adds NumPy purely for speed, and the two code paths are pinned
+  together by a test.
+- **A ranking objective, by default.** Greedy best-first search never reads a
+  heuristic value, only the order it imposes, so the loss optimises the order:
+  at each state on a plan, the successor the plan took should sort ahead of the
+  siblings it passed over. A small regression term is kept to anchor a scale,
+  which pure ranking leaves undefined and `wastar` needs. Checkpoints are
+  selected on top-1 ranking accuracy rather than validation error.
+- **A reinforcement stage that optimises search cost directly**, since "nodes
+  expanded" is not a differentiable function of the weights: DAgger for the
+  distribution shift, bootstrapping for the instances too hard to label, and
+  the cross-entropy method over the weight vector with the planner as a black
+  box. On blocksworld this took a held-out set from 366 expansions and 0.90
+  coverage to 131 and 1.00.
+- **`jupyddl learn`**, and `learned:<model.json>` accepted anywhere a heuristic
+  name is — `solve`, `benchmark`, the API. `make_heuristic` also passes through
+  an already-built heuristic, so callers holding a trained model need not
+  round-trip it to disk.
+- `.docs/` — research notes: the prior work, the measured results including the
+  domain where this loses badly and exactly why, the MDP the RL stage
+  corresponds to, and a roadmap.
+
 ### Fixed
 - **`always` was not enforced across the actions timed initial literals compile
   to.** The invariant went onto the domain's own actions and the goal, on the

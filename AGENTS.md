@@ -54,6 +54,12 @@ native build step, and the core has zero runtime dependencies.
   initial literals, object fluents) rewritten into the classical core **before**
   grounding. Add front-end features here as source-to-source transformations,
   not as special cases in the grounder or the search.
+- `jupyddl/learn/` — learned heuristics. **Stdlib-only like the core**; NumPy is
+  a speed option and the pure-Python path must keep working. Two stages:
+  `train.py` imitates `h*` from solved plans, `rl.py` optimises search cost
+  directly. Nothing in the core imports it — `jupyddl.heuristics` resolves
+  `learned:<path>` lazily inside the loader, so a planner that never asks for
+  one never pays for it.
 - `jupyddl/generator.py` — reproducible instance generators.
 - `jupyddl/trace.py` — search observers, events, `SearchTrace` (JSON).
 - `jupyddl/live.py` — the terminal dashboard; **stdlib only, keep it that way**,
@@ -62,7 +68,10 @@ native build step, and the core has zero runtime dependencies.
   import this package.
 - `web/` — the Pyodide playground; `tools/build_web.py` bundles the package
   sources and demos into `web/dist` (committed).
-- `tools/make_promo.py` — renders the promo video from measured runs.
+- `tools/make_promo.py` — renders the main promo video from measured runs.
+- `tools/make_learn_promo.py` — the learned-heuristic/RL video. It re-measures
+  everything including both failure modes, so it cannot drift from `.docs/`;
+  `promo/rl-data.json` caches the pass, delete it to re-measure.
 
 ### The condition pipeline
 Conditions are a **formula tree in negation normal form**: `parse_condition`
@@ -137,6 +146,34 @@ planners must go through the task rather than the operator to honour them:
 - **The clock is checked every expansion** (`Budget.check_every=1`). That looks
   wasteful but is not: one LM-cut expansion can cost tens of milliseconds, and a
   coarser interval overshoots a short `--time-limit` enormously.
+### Learned heuristics, non-obvious parts
+- **Features are keyed on the predicate symbol, never the ground atom**, and
+  normalised per symbol. That is what makes the vector the same length for 4
+  blocks and 40. Getting `predicate_of` wrong does not raise — it gives every
+  ground atom its own slot and silently destroys transfer, so
+  `tests/test_learn.py` pins both spellings (`(on a b)` and `move(a,b)`).
+- **The default objective is ranking, not regression.** GBFS reads the *order*
+  a heuristic imposes, never its values; a model uniformly 30 too high guides
+  perfectly. Checkpoint selection is on top-1 accuracy for the same reason. The
+  regression term is kept at a small weight only to anchor a scale, which a
+  pure ranking loss leaves undefined and `wastar` needs.
+- **Report the distribution, not just the mean.** The held-out blocksworld set
+  has a heavy tail: nine of ten instances land between 58 and 227 expansions and
+  the tenth is worth thousands, so the mean is close to a report of that one
+  instance. Two published claims here were wrong because of it — see the
+  correction in `.docs/rl-for-search.md`, which also records the more
+  embarrassing cause: two settings changed in one edit and the improvement was
+  credited to the wrong one.
+- **Two things decide whether the RL stage does anything.** It must start from
+  the imitation solution (search cost is flat over every parameter vector that
+  solves nothing), and it must tune on instances with *headroom* — on the
+  training ladder the heuristic already expands about as many nodes as the plan
+  is long, so every perturbation scores the same. Measured: tuning on the
+  training sizes moved the score 12.83 → 12.75; tuning a rung higher moved it
+  1605 → 64. `learn_heuristic` defaults `cem_sizes` above the training ladder.
+- **A learned heuristic is never admissible** and must not be used to claim an
+  optimal plan. The suite asserts plans stay *valid*, which is the invariant
+  that does hold.
 - Extend via the registries: `jupyddl.search.PLANNERS`,
   `jupyddl.heuristics.HEURISTICS` and `jupyddl.generator.GENERATORS`. The CLI,
   benchmark harness and web workbench all read from them, so a new entry shows

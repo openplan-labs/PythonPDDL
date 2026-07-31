@@ -1,0 +1,495 @@
+{
+ "space": {
+  "predicates": [
+   "clear",
+   "handempty",
+   "holding",
+   "on",
+   "ontable"
+  ],
+  "features": 14,
+  "train_instances": 12,
+  "train_sizes": [
+   3,
+   6
+  ],
+  "eval_sizes": [
+   9,
+   13
+  ]
+ },
+ "corpus": {
+  "count": 118,
+  "groups": 104,
+  "mean": 5.279661016949152,
+  "std": 3.861776163804393,
+  "min": 0.0,
+  "max": 16.0,
+  "optimal_fraction": 1.0
+ },
+ "plan": {
+  "instance": "blocksworld-03-2",
+  "steps": [
+   "unstack(b1,b3)",
+   "put-down(b1)",
+   "pick-up(b2)",
+   "stack(b2,b3)"
+  ],
+  "suffix": [
+   4.0,
+   3.0,
+   2.0,
+   1.0
+  ]
+ },
+ "imitation": {
+  "mae": 0.9205159587205748,
+  "top1": 0.9230769230769231,
+  "in_top2": 1.0,
+  "best_epoch": 20,
+  "seconds": 0.06553611000003912,
+  "parameters": 1025,
+  "history": [
+   {
+    "epoch": 1,
+    "top1": 0.7763157894736842,
+    "loss": 1.0150187332387282
+   },
+   {
+    "epoch": 2,
+    "top1": 0.7894736842105263,
+    "loss": 0.9252037718213768
+   },
+   {
+    "epoch": 3,
+    "top1": 0.881578947368421,
+    "loss": 0.8130478089675709
+   },
+   {
+    "epoch": 4,
+    "top1": 0.8947368421052632,
+    "loss": 0.775756577786443
+   },
+   {
+    "epoch": 5,
+    "top1": 0.8947368421052632,
+    "loss": 0.7548487659235616
+   },
+   {
+    "epoch": 6,
+    "top1": 0.8947368421052632,
+    "loss": 0.7223636728634536
+   },
+   {
+    "epoch": 7,
+    "top1": 0.8947368421052632,
+    "loss": 0.7723022515427278
+   },
+   {
+    "epoch": 8,
+    "top1": 0.9078947368421053,
+    "loss": 0.7035696388901393
+   },
+   {
+    "epoch": 9,
+    "top1": 0.9078947368421053,
+    "loss": 0.7455279763920939
+   },
+   {
+    "epoch": 10,
+    "top1": 0.9210526315789473,
+    "loss": 0.7359165954972391
+   },
+   {
+    "epoch": 11,
+    "top1": 0.9210526315789473,
+    "loss": 0.6859913176223392
+   },
+   {
+    "epoch": 12,
+    "top1": 0.881578947368421,
+    "loss": 0.689344075109841
+   },
+   {
+    "epoch": 13,
+    "top1": 0.881578947368421,
+    "loss": 0.6480429372974326
+   },
+   {
+    "epoch": 14,
+    "top1": 0.9078947368421053,
+    "loss": 0.6735856352437681
+   },
+   {
+    "epoch": 15,
+    "top1": 0.9210526315789473,
+    "loss": 0.665086602116252
+   },
+   {
+    "epoch": 16,
+    "top1": 0.9210526315789473,
+    "loss": 0.7346798744247327
+   },
+   {
+    "epoch": 17,
+    "top1": 0.9210526315789473,
+    "loss": 0.7508305741985783
+   },
+   {
+    "epoch": 18,
+    "top1": 0.9210526315789473,
+    "loss": 0.6577391223695969
+   },
+   {
+    "epoch": 19,
+    "top1": 0.9210526315789473,
+    "loss": 0.7290821330428392
+   },
+   {
+    "epoch": 20,
+    "top1": 0.9210526315789473,
+    "loss": 0.6820188370948383
+   },
+   {
+    "epoch": 21,
+    "top1": 0.881578947368421,
+    "loss": 0.6792723684862068
+   },
+   {
+    "epoch": 22,
+    "top1": 0.9210526315789473,
+    "loss": 0.7485992569790645
+   },
+   {
+    "epoch": 23,
+    "top1": 0.8947368421052632,
+    "loss": 0.6309181104792626
+   },
+   {
+    "epoch": 24,
+    "top1": 0.868421052631579,
+    "loss": 0.6969212951548777
+   },
+   {
+    "epoch": 25,
+    "top1": 0.868421052631579,
+    "loss": 0.6996913806138843
+   },
+   {
+    "epoch": 26,
+    "top1": 0.8947368421052632,
+    "loss": 0.6869846718947648
+   },
+   {
+    "epoch": 27,
+    "top1": 0.8947368421052632,
+    "loss": 0.6906913144263385
+   },
+   {
+    "epoch": 28,
+    "top1": 0.8947368421052632,
+    "loss": 0.7113118541923102
+   },
+   {
+    "epoch": 29,
+    "top1": 0.881578947368421,
+    "loss": 0.6900435487807537
+   },
+   {
+    "epoch": 30,
+    "top1": 0.881578947368421,
+    "loss": 0.6810791261501254
+   },
+   {
+    "epoch": 31,
+    "top1": 0.8552631578947368,
+    "loss": 0.7706092945366239
+   },
+   {
+    "epoch": 32,
+    "top1": 0.8552631578947368,
+    "loss": 0.7019795680509671
+   }
+  ]
+ },
+ "transfer_before": {
+  "learned": {
+   "solved": 9,
+   "total": 10,
+   "expanded": 3290,
+   "seconds": 1.2946110370000952,
+   "cost": 442,
+   "mean_expanded": 365.55555555555554,
+   "mean_seconds": 0.14384567077778834,
+   "mean_cost": 49.111111111111114,
+   "coverage": 0.9
+  },
+  "hff": {
+   "solved": 10,
+   "total": 10,
+   "expanded": 5183,
+   "seconds": 5.5783092040001065,
+   "cost": 518,
+   "mean_expanded": 518.3,
+   "mean_seconds": 0.5578309204000107,
+   "mean_cost": 51.8,
+   "coverage": 1.0
+  },
+  "goalcount": {
+   "solved": 10,
+   "total": 10,
+   "expanded": 24834,
+   "seconds": 1.6121297669999421,
+   "cost": 510,
+   "mean_expanded": 2483.4,
+   "mean_seconds": 0.1612129766999942,
+   "mean_cost": 51.0,
+   "coverage": 1.0
+  },
+  "blind": {
+   "solved": 0,
+   "total": 10,
+   "expanded": 0,
+   "seconds": 0.0,
+   "cost": 0,
+   "mean_expanded": 0.0,
+   "mean_seconds": 0.0,
+   "mean_cost": 0.0,
+   "coverage": 0.0
+  }
+ },
+ "cem": {
+  "seconds": 38.99109729299994,
+  "iterations": 10,
+  "population": 12,
+  "history": [
+   {
+    "iteration": 0,
+    "tuning": null,
+    "validation": 276.125,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 1,
+    "tuning": 106.0,
+    "validation": 76.125,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 2,
+    "tuning": 114.5,
+    "validation": 76.125,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 3,
+    "tuning": 109.75,
+    "validation": 76.125,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 4,
+    "tuning": 112.125,
+    "validation": 76.125,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 5,
+    "tuning": 106.25,
+    "validation": 76.125,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 6,
+    "tuning": 101.0,
+    "validation": 73.25,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 7,
+    "tuning": 101.0,
+    "validation": 73.25,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 8,
+    "tuning": 100.75,
+    "validation": 73.125,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 9,
+    "tuning": 100.625,
+    "validation": 73.125,
+    "coverage": 1.0
+   },
+   {
+    "iteration": 10,
+    "tuning": 99.875,
+    "validation": 73.125,
+    "coverage": 1.0
+   }
+  ]
+ },
+ "transfer_after": {
+  "learned": {
+   "solved": 10,
+   "total": 10,
+   "expanded": 1371,
+   "seconds": 0.36463156399986474,
+   "cost": 482,
+   "mean_expanded": 137.1,
+   "mean_seconds": 0.03646315639998647,
+   "mean_cost": 48.2,
+   "coverage": 1.0
+  },
+  "hff": {
+   "solved": 10,
+   "total": 10,
+   "expanded": 5183,
+   "seconds": 5.3366881800002375,
+   "cost": 518,
+   "mean_expanded": 518.3,
+   "mean_seconds": 0.5336688180000237,
+   "mean_cost": 51.8,
+   "coverage": 1.0
+  },
+  "goalcount": {
+   "solved": 10,
+   "total": 10,
+   "expanded": 24834,
+   "seconds": 1.5423849710005015,
+   "cost": 510,
+   "mean_expanded": 2483.4,
+   "mean_seconds": 0.15423849710005016,
+   "mean_cost": 51.0,
+   "coverage": 1.0
+  },
+  "blind": {
+   "solved": 0,
+   "total": 10,
+   "expanded": 0,
+   "seconds": 0.0,
+   "cost": 0,
+   "mean_expanded": 0.0,
+   "mean_seconds": 0.0,
+   "mean_cost": 0.0,
+   "coverage": 0.0
+  }
+ },
+ "flat": {
+  "easy_before": 12.833333333333334,
+  "easy_after": 12.25,
+  "hard_before": 152.125,
+  "hard_after": 100.75
+ },
+ "spread": {
+  "instances": [
+   "blocksworld-09-7777",
+   "blocksworld-09-7778",
+   "blocksworld-10-7777",
+   "blocksworld-10-7778",
+   "blocksworld-11-7777",
+   "blocksworld-11-7778",
+   "blocksworld-12-7777",
+   "blocksworld-12-7778",
+   "blocksworld-13-7777",
+   "blocksworld-13-7778"
+  ],
+  "imitation": {
+   "blocksworld-09-7777": 77,
+   "blocksworld-09-7778": 126,
+   "blocksworld-10-7777": 70,
+   "blocksworld-10-7778": 287,
+   "blocksworld-11-7777": 113,
+   "blocksworld-11-7778": 150,
+   "blocksworld-12-7777": 349,
+   "blocksworld-12-7778": 114,
+   "blocksworld-13-7777": 30000,
+   "blocksworld-13-7778": 2004
+  },
+  "imitation_solved": {
+   "blocksworld-09-7777": true,
+   "blocksworld-09-7778": true,
+   "blocksworld-10-7777": true,
+   "blocksworld-10-7778": true,
+   "blocksworld-11-7777": true,
+   "blocksworld-11-7778": true,
+   "blocksworld-12-7777": true,
+   "blocksworld-12-7778": true,
+   "blocksworld-13-7777": false,
+   "blocksworld-13-7778": true
+  },
+  "lo": {
+   "sigma": 0.05,
+   "tuning": 108.5,
+   "per_instance": {
+    "blocksworld-09-7777": 69,
+    "blocksworld-09-7778": 67,
+    "blocksworld-10-7777": 33,
+    "blocksworld-10-7778": 229,
+    "blocksworld-11-7777": 90,
+    "blocksworld-11-7778": 121,
+    "blocksworld-12-7777": 228,
+    "blocksworld-12-7778": 72,
+    "blocksworld-13-7777": 16121,
+    "blocksworld-13-7778": 273
+   },
+   "solved": {
+    "blocksworld-09-7777": true,
+    "blocksworld-09-7778": true,
+    "blocksworld-10-7777": true,
+    "blocksworld-10-7778": true,
+    "blocksworld-11-7777": true,
+    "blocksworld-11-7778": true,
+    "blocksworld-12-7777": true,
+    "blocksworld-12-7778": true,
+    "blocksworld-13-7777": true,
+    "blocksworld-13-7778": true
+   },
+   "mean": 1730.3
+  },
+  "hi": {
+   "sigma": 0.15,
+   "tuning": 99.875,
+   "per_instance": {
+    "blocksworld-09-7777": 70,
+    "blocksworld-09-7778": 68,
+    "blocksworld-10-7777": 58,
+    "blocksworld-10-7778": 217,
+    "blocksworld-11-7777": 81,
+    "blocksworld-11-7778": 111,
+    "blocksworld-12-7777": 227,
+    "blocksworld-12-7778": 70,
+    "blocksworld-13-7777": 214,
+    "blocksworld-13-7778": 255
+   },
+   "solved": {
+    "blocksworld-09-7777": true,
+    "blocksworld-09-7778": true,
+    "blocksworld-10-7777": true,
+    "blocksworld-10-7778": true,
+    "blocksworld-11-7777": true,
+    "blocksworld-11-7778": true,
+    "blocksworld-12-7777": true,
+    "blocksworld-12-7778": true,
+    "blocksworld-13-7777": true,
+    "blocksworld-13-7778": true
+   },
+   "mean": 137.1
+  },
+  "budget": 30000
+ },
+ "logistics": {
+  "predicates": [
+   "at",
+   "in"
+  ],
+  "features": 8,
+  "top1": 0.6560509554140127,
+  "learned": 203.83333333333334,
+  "hff": 34.666666666666664,
+  "blocks_top1": 0.9230769230769231
+ },
+ "total_seconds": 229.68699452200008
+}

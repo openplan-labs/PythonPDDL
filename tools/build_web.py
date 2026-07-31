@@ -28,7 +28,10 @@ PACKAGE = os.path.join(ROOT, "jupyddl")
 OUT = os.path.join(ROOT, "web", "dist")
 
 # viz/ needs matplotlib, which the playground deliberately does not ship.
-SKIP_DIRS = {"viz", "__pycache__"}
+# learn/ is stdlib-only and would work in the browser, but training there is
+# not the point and no trained model ships with the page, so bundling it would
+# add weight to every visitor's download for a feature none of them can use.
+SKIP_DIRS = {"viz", "learn", "__pycache__"}
 
 # id, title, blurb, feature tags, suggested (planner, heuristic).
 #
