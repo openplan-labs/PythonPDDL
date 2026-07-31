@@ -335,7 +335,14 @@ It does not always win — on logistics it loses to `hff` by 6× and the reason 
 exact rather than mysterious: that domain has two predicates, so the feature
 vector cannot tell *which* package is where, only how many are somewhere. That
 result, the RL formulation, and what to build next are written up in
-[`.docs/`](.docs/).
+[`.docs/`](.docs/), and there is a
+[97-second tour of the RL half](promo/jupyddl-rl.mp4) — including the two
+measurement mistakes that shaped the design.
+
+Read the 137 as a mean over a heavy tail: nine of the ten held-out instances sit
+between 58 and 227 expansions and the tenth moves the average on its own. The
+firmest claim is the coverage one — imitation could not solve that instance
+inside 30 000 expansions, and the tuned heuristic solves it in 214.
 
 ```python
 from jupyddl.learn import learn_heuristic

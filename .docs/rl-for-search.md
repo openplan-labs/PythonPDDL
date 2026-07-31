@@ -135,25 +135,62 @@ on a small instance.
 CEM fixed the coverage failure imitation left behind, then shaved expansions:
 2.7× fewer nodes on instances no stage of training ever saw.
 
-### The failure that produced the validation split
+### A correction, and what the numbers actually say
 
-The first version of this selected the incumbent by its score on the tuning
-set. It looked excellent:
+An earlier version of this note claimed that selecting the incumbent on a
+disjoint instance family was what took the held-out score from 1734 to 137.
+**That attribution was wrong**, and the way it went wrong is worth keeping.
 
-```
-cem iter 10: best 108, incumbent 108 (coverage 1.00)
-```
+Two things changed in the same edit: the validation split went in, *and* the
+perturbation scale `sigma` went from 0.05 to 0.15. The improvement was credited
+entirely to the first. Re-running with only the selection rule varying:
 
-and then scored **1734 expansions** on the held-out benchmark — nearly five
-times *worse* than the 366 the imitated heuristic managed before tuning. A
-thousand parameters had been fitted to eight instances, and had fitted them.
+| | held-out mean expansions |
+|---|---|
+| σ=0.05, selected on the tuning set | 1734 |
+| σ=0.05, selected on a disjoint family | 1730 |
+| σ=0.15, selected on the tuning set | 137 |
+| σ=0.15, selected on a disjoint family | 137 |
 
-The fix is the ordinary one and it is worth stating because the derivative-free
-framing makes it easy to forget that this is still machine learning: candidates
-are *proposed* by their tuning score, since that is what the sampling
-distribution refits on, but the incumbent — the thing actually returned — only
-moves when a **second, disjoint instance family** improves too. With that in
-place the same command produces 137.
+The validation split makes no difference here. **`sigma` was doing all the
+work.** Widening the validation family to span sizes beyond the tuning range
+does not change it either (1741 / 136).
+
+### And the mean was doing the lying
+
+Per instance, on the held-out set:
+
+| instance | imitation | σ=0.05 | σ=0.15 |
+|---|---|---|---|
+| blocksworld-09-7777 | 77 | 69 | 70 |
+| blocksworld-09-7778 | 126 | 67 | 68 |
+| blocksworld-10-7777 | 70 | 33 | 58 |
+| blocksworld-10-7778 | 287 | 229 | 217 |
+| blocksworld-11-7777 | 113 | 90 | 81 |
+| blocksworld-11-7778 | 150 | 121 | 111 |
+| blocksworld-12-7777 | 349 | 228 | 227 |
+| blocksworld-12-7778 | 114 | 72 | 70 |
+| **blocksworld-13-7777** | **30 000 (unsolved)** | **16 121** | **214** |
+| blocksworld-13-7778 | 2 004 | 273 | 255 |
+
+Nine of ten instances improve under *both* settings, by roughly the same
+factor. The entire 1734-versus-137 gap is one instance. Reporting a mean over a
+distribution with that shape is close to reporting that one instance and
+nothing else, and it is why the headline "137" should be read as a mean over a
+heavy tail rather than a typical case.
+
+What survives, and is worth having:
+
+- **CEM fixed a coverage failure.** Imitation could not solve
+  `blocksworld-13-7777` within 30 000 expansions. Both tuned versions could.
+  That is a real capability change, not a shaved constant.
+- **Every instance improves.** The median improvement is around 1.4×, which is
+  the honest version of the headline.
+- **The validation split is still correct**, just not load-bearing here. It
+  guarantees the returned model is no worse on instances the optimiser did not
+  fit — on this run, validation went 276 → 73 — and that guarantee costs one
+  extra scoring pass per iteration. Keep it; do not credit it with results it
+  did not produce.
 
 `optimise_search_cost` reports both numbers every iteration, so a run that is
 fitting its tuning set while losing validation is visible rather than silent:
@@ -162,8 +199,9 @@ fitting its tuning set while losing validation is visible rather than silent:
 cem iter 7: tuning 101, validation 73, incumbent 73 (coverage 1.00)
 ```
 
-Passing no `validation_tasks` restores the old behaviour, and with it the old
-failure mode. `learn_heuristic` always passes one.
+The general lesson is the ordinary one, which the derivative-free framing made
+easy to forget: **change one thing at a time, and look at the distribution
+before believing the mean.** `learn_heuristic` always passes one.
 
 ## The three things that decide whether this works
 
@@ -192,10 +230,12 @@ average, moved it to 64 — a 25× improvement — and cut a held-out set from 3
 **Optimise where the search is still bad.** `learn_heuristic` therefore defaults
 `cem_sizes` to a rung above the training ladder rather than reusing it.
 
-### Select on instances you are not fitting
+### Pick a perturbation scale, and check it
 
-The section above. It is the difference between 137 and 1734 on the same
-command, and it is the single most consequential line of code in this module.
+The section above. `sigma=0.05` and `sigma=0.15` differ by an order of
+magnitude in held-out cost on the same command, and the difference is
+concentrated in the hardest instance. Selecting on a disjoint family is still
+right — it bounds what you can return — but it is a guardrail, not the knob.
 
 ## Design details worth knowing
 

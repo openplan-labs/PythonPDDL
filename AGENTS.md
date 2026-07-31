@@ -68,7 +68,10 @@ native build step, and the core has zero runtime dependencies.
   import this package.
 - `web/` — the Pyodide playground; `tools/build_web.py` bundles the package
   sources and demos into `web/dist` (committed).
-- `tools/make_promo.py` — renders the promo video from measured runs.
+- `tools/make_promo.py` — renders the main promo video from measured runs.
+- `tools/make_learn_promo.py` — the learned-heuristic/RL video. It re-measures
+  everything including both failure modes, so it cannot drift from `.docs/`;
+  `promo/rl-data.json` caches the pass, delete it to re-measure.
 
 ### The condition pipeline
 Conditions are a **formula tree in negation normal form**: `parse_condition`
@@ -154,6 +157,13 @@ planners must go through the task rather than the operator to honour them:
   perfectly. Checkpoint selection is on top-1 accuracy for the same reason. The
   regression term is kept at a small weight only to anchor a scale, which a
   pure ranking loss leaves undefined and `wastar` needs.
+- **Report the distribution, not just the mean.** The held-out blocksworld set
+  has a heavy tail: nine of ten instances land between 58 and 227 expansions and
+  the tenth is worth thousands, so the mean is close to a report of that one
+  instance. Two published claims here were wrong because of it — see the
+  correction in `.docs/rl-for-search.md`, which also records the more
+  embarrassing cause: two settings changed in one edit and the improvement was
+  credited to the wrong one.
 - **Two things decide whether the RL stage does anything.** It must start from
   the imitation solution (search cost is flat over every parameter vector that
   solves nothing), and it must tune on instances with *headroom* — on the

@@ -140,9 +140,14 @@ Three disjoint instance families are involved and the separation matters:
 training uses seed 0, CEM tunes on seed 1000 and selects on seed 2000, and the
 evaluation above is seed 7777. Nothing in the table was seen by any stage.
 
-Imitation alone left one test instance unsolved. The reinforcement stage fixed
-it — see [rl-for-search.md](rl-for-search.md), including the version of this
-run that made transfer five times *worse* before the validation split went in.
+Imitation alone left one test instance unsolved (`blocksworld-13-7777`, still
+searching at 30 000 expansions). The reinforcement stage fixed it.
+
+Read the mean in that table with care: the held-out set has a heavy tail, and
+that one instance dominates it. Nine of ten instances sit between 58 and 227
+expansions; the tenth is what moves the average. The per-instance breakdown, and
+a correction to an earlier claim about *why* the tuned model is better, are in
+[rl-for-search.md](rl-for-search.md).
 
 ### gripper — trained on 2–5 balls, tested on 8–12
 

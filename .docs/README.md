@@ -23,10 +23,27 @@ that quantity is not a differentiable function of the weights. Optimising it
 directly — treating the planner as a black box and the weights as a policy —
 is where this becomes reinforcement learning, and on blocksworld it is worth
 another 2.7× on top of imitation while fixing a coverage failure that
-imitation alone left behind. It also produced the most useful negative result
-here: selected on the instances it was tuning, it made transfer nearly five
-times *worse* while reporting an excellent score — which is why the optimiser
-now selects on a disjoint instance family.
+imitation alone left behind — it solved a held-out instance imitation could not
+solve at all.
+
+It also produced the most useful negative result here, which is about us rather
+than about planning: an earlier version of these notes credited that improvement
+to the validation split. Re-running with one variable at a time showed the
+perturbation scale was doing all the work, and that nine of the ten held-out
+instances improve either way — the whole headline gap is a single hard instance.
+Both corrections are written up in `rl-for-search.md` rather than quietly
+edited out.
+
+## The video
+
+[`promo/jupyddl-rl.mp4`](../promo/jupyddl-rl.mp4) is a 97-second tour of this
+work. Like the main promo it measures everything at render time — it trains,
+reinforces, and re-runs both failure modes — so it cannot drift from these
+notes. Rebuild it with::
+
+    python tools/make_learn_promo.py --cache promo/rl-data.json -o promo/jupyddl-rl.mp4
+
+`promo/rl-data.json` is the cached measurement pass; delete it to re-measure.
 
 ## Reproducing everything here
 
