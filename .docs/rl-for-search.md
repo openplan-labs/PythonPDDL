@@ -48,7 +48,7 @@ reward — `−(expansions) − λ·(plan cost)` — and it is not, by default, 
 REINFORCE needs a stochastic policy. The natural one is Boltzmann over the open
 list: expand node `i` with probability `∝ exp(−h(si)/τ)`. Then
 
-```
+```text
 ∇θ J = E[ Σt ∇θ log π(at | st) · Gt ]
 ```
 
@@ -195,7 +195,7 @@ What survives, and is worth having:
 `optimise_search_cost` reports both numbers every iteration, so a run that is
 fitting its tuning set while losing validation is visible rather than silent:
 
-```
+```text
 cem iter 7: tuning 101, validation 73, incumbent 73 (coverage 1.00)
 ```
 

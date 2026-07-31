@@ -39,9 +39,11 @@ edited out.
 [`promo/jupyddl-rl.mp4`](../promo/jupyddl-rl.mp4) is a 97-second tour of this
 work. Like the main promo it measures everything at render time — it trains,
 reinforces, and re-runs both failure modes — so it cannot drift from these
-notes. Rebuild it with::
+notes. Rebuild it with:
 
-    python tools/make_learn_promo.py --cache promo/rl-data.json -o promo/jupyddl-rl.mp4
+```bash
+python tools/make_learn_promo.py --cache promo/rl-data.json -o promo/jupyddl-rl.mp4
+```
 
 `promo/rl-data.json` is the cached measurement pass; delete it to re-measure.
 
