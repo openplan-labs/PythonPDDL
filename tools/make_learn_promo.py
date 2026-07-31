@@ -71,210 +71,268 @@ HARD_SIZES = range(9, 13)
 EVAL_SIZES = range(9, 14)
 
 
-def collect() -> dict:
-    """Train, reinforce, and reproduce both failure modes. Returns everything."""
-    from jupyddl.learn import TrainConfig, solved_corpus, tasks_from_generator, train
+BUDGET = 30000
+TIME_LIMIT = 30.0
+
+
+def _transfer(model, tasks, baselines=("hff", "goalcount", "blind")):
+    """Benchmark ``model`` against ``baselines`` under a fixed budget."""
+    from jupyddl.learn.pipeline import evaluate_transfer
+
+    return evaluate_transfer(
+        model, tasks, baselines=baselines, max_expansions=BUDGET, time_limit=TIME_LIMIT
+    )
+
+
+def _families(note):
+    """The four disjoint seed families, and the vocabulary spanning them all.
+
+    Four rather than three, and disjoint on purpose: training fits one, the
+    optimiser tunes on a second and is *selected* on a third, and the numbers
+    that appear on screen come from a fourth that no stage ever touched.
+    """
+    from jupyddl.learn import tasks_from_generator
     from jupyddl.learn.features import FeatureSpace
-    from jupyddl.learn.pipeline import evaluate_transfer, summarise_transfer
-    from jupyddl.learn.rl import RLConfig, optimise_search_cost, search_cost
 
-    started = time.perf_counter()
-    data: dict = {}
-
-    def note(message):
-        print(f"  [{time.perf_counter() - started:5.1f}s] {message}")
-
-    # -- the instance families. Four disjoint seed families, which is the
-    # -- point of the whole exercise: nothing is ever scored on what it fit.
-    train_tasks = tasks_from_generator(
-        "blocksworld", TRAIN_SIZES, seed=0, seeds_per_size=3
-    )
-    tune_tasks = tasks_from_generator(
-        "blocksworld", HARD_SIZES, seed=1000, seeds_per_size=2
-    )
-    val_tasks = tasks_from_generator(
-        "blocksworld", HARD_SIZES, seed=2000, seeds_per_size=2
-    )
-    eval_tasks = tasks_from_generator(
-        "blocksworld", EVAL_SIZES, seed=7777, seeds_per_size=2
-    )
-    space = FeatureSpace.from_tasks(
-        task for _, task in train_tasks + tune_tasks + val_tasks + eval_tasks
-    )
-    data["space"] = {
-        "predicates": list(space.vocabulary),
-        "features": space.size,
-        "train_instances": len(train_tasks),
-        "train_sizes": [min(TRAIN_SIZES), max(TRAIN_SIZES)],
-        "eval_sizes": [min(EVAL_SIZES), max(EVAL_SIZES)],
+    families = {
+        "train": tasks_from_generator(
+            "blocksworld", TRAIN_SIZES, seed=0, seeds_per_size=3
+        ),
+        "tune": tasks_from_generator(
+            "blocksworld", HARD_SIZES, seed=1000, seeds_per_size=2
+        ),
+        "val": tasks_from_generator(
+            "blocksworld", HARD_SIZES, seed=2000, seeds_per_size=2
+        ),
+        "eval": tasks_from_generator(
+            "blocksworld", EVAL_SIZES, seed=7777, seeds_per_size=2
+        ),
     }
-    note(f"ladder: {len(train_tasks)} train, {len(eval_tasks)} eval")
+    every = [task for group in families.values() for _, task in group]
+    space = FeatureSpace.from_tasks(every)
+    note(f"ladder: {len(families['train'])} train, {len(families['eval'])} eval")
+    return families, space
 
-    # -- one plan, with the labels it hands over for free
-    corpus = solved_corpus(train_tasks, space=space)
-    data["corpus"] = corpus.target_stats()
-    note(
-        f"corpus: {data['corpus']['count']} samples, {data['corpus']['groups']} groups"
-    )
 
+def _demo_plan(task, name):
+    """One plan, annotated with the cost-to-go each state on it reveals."""
     from jupyddl.api import solve_task
 
-    name, demo_task = train_tasks[2]
-    demo = solve_task(demo_task, "astar", "lmcut", time_limit=30)
-    steps = [op.base_name for op in demo_task.visible_plan(demo.plan)]
-    suffix = [0.0] * (len(demo.plan) + 1)
-    for i in range(len(demo.plan) - 1, -1, -1):
-        suffix[i] = suffix[i + 1] + demo.plan[i].cost
-    data["plan"] = {"instance": name, "steps": steps, "suffix": suffix[: len(steps)]}
+    result = solve_task(task, "astar", "lmcut", time_limit=TIME_LIMIT)
+    steps = [op.base_name for op in task.visible_plan(result.plan)]
+    suffix = [0.0] * (len(result.plan) + 1)
+    for index in range(len(result.plan) - 1, -1, -1):
+        suffix[index] = suffix[index + 1] + result.plan[index].cost
+    return {"instance": name, "steps": steps, "suffix": suffix[: len(steps)]}
 
-    # -- imitation
-    config = TrainConfig(epochs=60, seed=0)
-    bundle, report = train(corpus, config)
-    data["imitation"] = {
-        "mae": report.metrics["mae"],
-        "top1": report.metrics["top1"],
-        "in_top2": report.metrics.get("in_top2", 0.0),
-        "best_epoch": report.best_epoch,
-        "seconds": report.seconds,
-        "parameters": bundle.model.num_parameters,
-        "history": [
-            {"epoch": h["epoch"], "top1": h["train_top1"], "loss": h["loss"]}
-            for h in report.history
-        ],
-    }
+
+def _imitate(families, space, note):
+    """Corpus, one annotated plan, and the supervised fit. Returns the bundle."""
+    from jupyddl.learn import TrainConfig, solved_corpus, train
+    from jupyddl.learn.pipeline import summarise_transfer
+
+    corpus = solved_corpus(families["train"], space=space)
+    stats = corpus.target_stats()
+    note(f"corpus: {stats['count']} samples, {stats['groups']} groups")
+
+    bundle, report = train(corpus, TrainConfig(epochs=60, seed=0))
     note(
         f"imitation: top-1 {report.metrics['top1']:.3f}, MAE {report.metrics['mae']:.2f}"
     )
 
-    rl = RLConfig(max_expansions=30000, seed=0)
-    before_rows = evaluate_transfer(
-        bundle, eval_tasks, max_expansions=30000, time_limit=30.0
-    )
-    data["transfer_before"] = summarise_transfer(before_rows)
+    name, task = families["train"][2]
+    section = {
+        "corpus": stats,
+        "plan": _demo_plan(task, name),
+        "imitation": {
+            "mae": report.metrics["mae"],
+            "top1": report.metrics["top1"],
+            "in_top2": report.metrics.get("in_top2", 0.0),
+            "best_epoch": report.best_epoch,
+            "seconds": report.seconds,
+            "parameters": bundle.model.num_parameters,
+            "history": [
+                {"epoch": h["epoch"], "top1": h["train_top1"], "loss": h["loss"]}
+                for h in report.history
+            ],
+        },
+        "transfer_before": summarise_transfer(_transfer(bundle, families["eval"])),
+    }
     note(
-        f"imitation on eval: {data['transfer_before']['learned']['mean_expanded']:.0f} expanded"
+        "imitation on eval: "
+        f"{section['transfer_before']['learned']['mean_expanded']:.0f} expanded"
     )
+    return bundle, section
 
-    # -- the reinforcement stage, done properly
-    cem_started = time.perf_counter()
+
+def _reinforce(bundle, families, rl, note):
+    """The reinforcement stage as it is meant to be run. Returns the model."""
+    from jupyddl.learn.pipeline import summarise_transfer
+    from jupyddl.learn.rl import optimise_search_cost
+
+    started = time.perf_counter()
     tuned, history = optimise_search_cost(
         bundle,
-        tune_tasks,
+        families["tune"],
         iterations=10,
         population=12,
         config=rl,
-        validation_tasks=val_tasks,
+        validation_tasks=families["val"],
     )
-    data["cem"] = {
-        "seconds": time.perf_counter() - cem_started,
-        "iterations": len(history) - 1,
-        "population": 12,
-        "history": [
-            {
-                "iteration": h["iteration"],
-                "tuning": h.get("tuning_score"),
-                "validation": h["score"],
-                "coverage": h["coverage"],
-            }
-            for h in history
-        ],
-    }
-    after_rows = evaluate_transfer(
-        tuned, eval_tasks, max_expansions=30000, time_limit=30.0
-    )
-    data["transfer_after"] = summarise_transfer(after_rows)
-    note(
-        f"cem: {data['cem']['seconds']:.0f}s, eval "
-        f"{data['transfer_after']['learned']['mean_expanded']:.0f} expanded"
-    )
-
-    # -- failure mode 1: the objective is flat where the search is already good
-    flat_before = search_cost(bundle, train_tasks, rl).score
-    flat_tuned, _ = optimise_search_cost(
-        bundle, train_tasks, iterations=6, population=8, config=rl
-    )
-    data["flat"] = {
-        "easy_before": flat_before,
-        "easy_after": search_cost(flat_tuned, train_tasks, rl).score,
-        "hard_before": search_cost(bundle, tune_tasks, rl).score,
-        "hard_after": search_cost(tuned, tune_tasks, rl).score,
+    section = {
+        "cem": {
+            "seconds": time.perf_counter() - started,
+            "iterations": len(history) - 1,
+            "population": 12,
+            "history": [
+                {
+                    "iteration": h["iteration"],
+                    "tuning": h.get("tuning_score"),
+                    "validation": h["score"],
+                    "coverage": h["coverage"],
+                }
+                for h in history
+            ],
+        },
+        "transfer_after": summarise_transfer(_transfer(tuned, families["eval"])),
     }
     note(
-        f"flat: easy {data['flat']['easy_before']:.1f} -> {data['flat']['easy_after']:.1f}, "
-        f"hard {data['flat']['hard_before']:.0f} -> {data['flat']['hard_after']:.0f}"
+        f"cem: {section['cem']['seconds']:.0f}s, eval "
+        f"{section['transfer_after']['learned']['mean_expanded']:.0f} expanded"
     )
+    return tuned, section
 
-    # -- the per-instance distribution behind the headline mean.
-    #
-    # This scene exists because the headline nearly went out wrong. Two things
-    # changed in one edit — a validation split, and sigma 0.05 -> 0.15 — and the
-    # improvement was credited to the first. Varying one at a time shows sigma
-    # doing all of it, and the per-instance breakdown shows why: nine of ten
-    # instances barely move, and the tenth decides the average. Both arms are
-    # measured here so the video cannot drift from the claim.
-    lo_sigma, hi_sigma = 0.05, 0.15
+
+def _flat_objective(bundle, tuned, families, rl, note):
+    """Trap one: nothing to optimise where the search is already good."""
+    from jupyddl.learn.rl import optimise_search_cost, search_cost
+
+    before = search_cost(bundle, families["train"], rl).score
+    retuned, _ = optimise_search_cost(
+        bundle, families["train"], iterations=6, population=8, config=rl
+    )
+    flat = {
+        "easy_before": before,
+        "easy_after": search_cost(retuned, families["train"], rl).score,
+        "hard_before": search_cost(bundle, families["tune"], rl).score,
+        "hard_after": search_cost(tuned, families["tune"], rl).score,
+    }
+    note(
+        f"flat: easy {flat['easy_before']:.1f} -> {flat['easy_after']:.1f}, "
+        f"hard {flat['hard_before']:.0f} -> {flat['hard_after']:.0f}"
+    )
+    return flat
+
+
+def _spread(bundle, families, rl, note):
+    """Trap two: the per-instance distribution behind the headline mean.
+
+    This exists because the headline nearly went out wrong. Two things changed
+    in one edit — a validation split, and sigma 0.05 -> 0.15 — and the
+    improvement was credited to the first. Varying one at a time shows sigma
+    doing all of it, and the per-instance breakdown shows why: nine of ten
+    instances barely move, and the tenth decides the average. Both arms are
+    measured here so the video cannot drift from the claim.
+    """
+    from jupyddl.learn.pipeline import summarise_transfer
+    from jupyddl.learn.rl import optimise_search_cost
+
     variants = {}
-    for label, sigma in (("lo", lo_sigma), ("hi", hi_sigma)):
-        model, hist = optimise_search_cost(
+    for label, sigma in (("lo", 0.05), ("hi", 0.15)):
+        model, history = optimise_search_cost(
             bundle,
-            tune_tasks,
+            families["tune"],
             iterations=10,
             population=12,
             sigma=sigma,
             config=rl,
-            validation_tasks=val_tasks,
+            validation_tasks=families["val"],
         )
-        rows = evaluate_transfer(
-            model, eval_tasks, baselines=(), max_expansions=30000, time_limit=30.0
-        )
+        rows = _transfer(model, families["eval"], baselines=())
         variants[label] = {
             "sigma": sigma,
-            "tuning": hist[-1].get("tuning_score"),
+            "tuning": history[-1].get("tuning_score"),
             "per_instance": {r["instance"]: r["expanded"] for r in rows},
             "solved": {r["instance"]: r["solved"] for r in rows},
             "mean": summarise_transfer(rows)["learned"]["mean_expanded"],
         }
-    base_rows = evaluate_transfer(
-        bundle, eval_tasks, baselines=(), max_expansions=30000, time_limit=30.0
+    base = _transfer(bundle, families["eval"], baselines=())
+    note(
+        f"spread: sigma 0.05 mean {variants['lo']['mean']:.0f}, "
+        f"sigma 0.15 mean {variants['hi']['mean']:.0f}"
     )
-    data["spread"] = {
-        "instances": [r["instance"] for r in base_rows],
-        "imitation": {r["instance"]: r["expanded"] for r in base_rows},
-        "imitation_solved": {r["instance"]: r["solved"] for r in base_rows},
+    return {
+        "instances": [r["instance"] for r in base],
+        "imitation": {r["instance"]: r["expanded"] for r in base},
+        "imitation_solved": {r["instance"]: r["solved"] for r in base},
         "lo": variants["lo"],
         "hi": variants["hi"],
-        "budget": 30000,
+        "budget": BUDGET,
     }
-    note(
-        f"spread: sigma {lo_sigma} mean {variants['lo']['mean']:.0f}, "
-        f"sigma {hi_sigma} mean {variants['hi']['mean']:.0f}"
-    )
 
-    # -- where it loses, and why
-    log_train = tasks_from_generator("logistics", range(2, 5), seed=0, seeds_per_size=3)
-    log_eval = tasks_from_generator(
+
+def _logistics(blocks_top1, note):
+    """The domain where this loses, and the feature space that explains it."""
+    from jupyddl.learn import TrainConfig, solved_corpus, tasks_from_generator, train
+    from jupyddl.learn.features import FeatureSpace
+    from jupyddl.learn.pipeline import summarise_transfer
+
+    train_tasks = tasks_from_generator(
+        "logistics", range(2, 5), seed=0, seeds_per_size=3
+    )
+    eval_tasks = tasks_from_generator(
         "logistics", range(5, 8), seed=7777, seeds_per_size=2
     )
-    log_space = FeatureSpace.from_tasks(t for _, t in log_train + log_eval)
-    log_corpus = solved_corpus(log_train, space=log_space, time_limit=30.0)
-    log_bundle, log_report = train(log_corpus, TrainConfig(epochs=60, seed=0))
-    log_rows = evaluate_transfer(
-        log_bundle, log_eval, max_expansions=30000, time_limit=30.0
-    )
-    log_summary = summarise_transfer(log_rows)
-    data["logistics"] = {
-        "predicates": list(log_space.vocabulary),
-        "features": log_space.size,
-        "top1": log_report.metrics["top1"],
-        "learned": log_summary["learned"]["mean_expanded"],
-        "hff": log_summary["hff"]["mean_expanded"],
-        "blocks_top1": data["imitation"]["top1"],
-    }
+    space = FeatureSpace.from_tasks(t for _, t in train_tasks + eval_tasks)
+    corpus = solved_corpus(train_tasks, space=space, time_limit=TIME_LIMIT)
+    bundle, report = train(corpus, TrainConfig(epochs=60, seed=0))
+    summary = summarise_transfer(_transfer(bundle, eval_tasks))
     note(
-        f"logistics: {len(log_space.vocabulary)} predicates, top-1 "
-        f"{log_report.metrics['top1']:.3f}, {log_summary['learned']['mean_expanded']:.0f} "
-        f"vs hff {log_summary['hff']['mean_expanded']:.0f}"
+        f"logistics: {len(space.vocabulary)} predicates, top-1 "
+        f"{report.metrics['top1']:.3f}, {summary['learned']['mean_expanded']:.0f} "
+        f"vs hff {summary['hff']['mean_expanded']:.0f}"
     )
+    return {
+        "predicates": list(space.vocabulary),
+        "features": space.size,
+        "top1": report.metrics["top1"],
+        "learned": summary["learned"]["mean_expanded"],
+        "hff": summary["hff"]["mean_expanded"],
+        "blocks_top1": blocks_top1,
+    }
+
+
+def collect() -> dict:
+    """Train, reinforce, and reproduce both failure modes. Returns everything."""
+    from jupyddl.learn.rl import RLConfig
+
+    started = time.perf_counter()
+
+    def note(message):
+        print(f"  [{time.perf_counter() - started:5.1f}s] {message}")
+
+    families, space = _families(note)
+    rl = RLConfig(max_expansions=BUDGET, seed=0)
+
+    data: dict = {
+        "space": {
+            "predicates": list(space.vocabulary),
+            "features": space.size,
+            "train_instances": len(families["train"]),
+            "train_sizes": [min(TRAIN_SIZES), max(TRAIN_SIZES)],
+            "eval_sizes": [min(EVAL_SIZES), max(EVAL_SIZES)],
+        }
+    }
+
+    bundle, imitation = _imitate(families, space, note)
+    data.update(imitation)
+
+    tuned, reinforced = _reinforce(bundle, families, rl, note)
+    data.update(reinforced)
+
+    data["flat"] = _flat_objective(bundle, tuned, families, rl, note)
+    data["spread"] = _spread(bundle, families, rl, note)
+    data["logistics"] = _logistics(data["imitation"]["top1"], note)
 
     data["total_seconds"] = time.perf_counter() - started
     return data
