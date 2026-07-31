@@ -249,14 +249,21 @@ def _default_labeller(config: RLConfig):
     from ..heuristics import make_heuristic
     from .dataset import task_from_state
 
+    # ``Task`` is an unfrozen dataclass, so it is unhashable and cannot key a
+    # dict directly. Keying on ``id()`` alone would be a trap: CPython reuses
+    # addresses once an object is collected, so a caller passing tasks this
+    # cache does not keep alive could get another task's heuristic. Holding the
+    # task in the value makes the id un-recyclable while the entry lives, and
+    # the identity check makes it correct even if that reasoning is ever wrong.
     cache: dict = {}
 
     def label(task, state):
         key = id(task)
-        reference = cache.get(key)
-        if reference is None:
-            reference = make_heuristic("hff", task)
-            cache[key] = reference
+        entry = cache.get(key)
+        if entry is None or entry[0] is not task:
+            entry = (task, make_heuristic("hff", task))
+            cache[key] = entry
+        reference = entry[1]
         planner = make_planner("gbfs")
         budget = make_budget(config.max_expansions, config.time_limit)
         result = planner.search(task_from_state(task, state), reference, budget=budget)

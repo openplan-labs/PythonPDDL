@@ -527,6 +527,27 @@ def test_dagger_adds_samples_from_the_search_distribution(corpus, ladder):
     assert tuned.bind(ladder[0][1])(ladder[0][1].initial_state()) >= 0.0
 
 
+def test_the_default_labeller_keeps_tasks_apart(ladder):
+    """Its heuristic cache is keyed on ``id()``, which CPython recycles.
+
+    The entry holds the task so the id cannot be reused underneath it, and
+    checks identity anyway. Without both, a caller whose tasks this cache does
+    not keep alive could be handed another task's relaxed-task tables — which
+    would not raise, just quietly mislabel.
+    """
+    from jupyddl.learn.rl import _default_labeller
+
+    label = _default_labeller(RLConfig(max_expansions=2000, seed=0))
+    for _, task in ladder[:2]:
+        plan = label(task, task.initial_state())
+        assert plan, "a solvable task should get a plan from its own heuristic"
+        state = task.initial_state()
+        for operator in plan:
+            assert operator.applicable(state), "plan came from the wrong task"
+            state = task.apply(operator, state)
+        assert task.goal_reached(state)
+
+
 def test_bootstrap_records_what_it_newly_solved(corpus, ladder):
     bundle, _ = train(corpus, TrainConfig(epochs=10, seed=0))
     harder = tasks_from_generator("blocksworld", [5], seed=11, seeds_per_size=2)
