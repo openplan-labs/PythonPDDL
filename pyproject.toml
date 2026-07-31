@@ -24,6 +24,10 @@ dependencies = []
 # 3.6 is the floor for the constrained-layout engine API the charts rely on
 # (``layout="constrained"`` plus ``Figure.get_layout_engine``).
 viz = ["matplotlib>=3.6"]
+# Purely a speed option. jupyddl.learn trains and evaluates on the standard
+# library alone; NumPy just makes the batched passes one to two orders of
+# magnitude faster, and tests/test_learn.py pins the two paths together.
+learn = ["numpy>=1.21"]
 dev = ["pytest>=7", "pytest-cov>=4", "flake8>=6", "black>=23"]
 
 [project.scripts]

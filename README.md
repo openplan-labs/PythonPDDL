@@ -46,6 +46,11 @@ is trivial to install, embed, teach with, and build on.
   Iterated Width, branch and bound, and anytime weighted A*.
 - 📊 **Heuristics from classical to SOTA**: blind, goal-count, `h_max`, `h_add`,
   FF (`h_ff`), critical-path `h^m` (`h1`/`h2`), and **LM-cut**.
+- 🧠 **Learned heuristics** trained from your own solved plans, then tuned
+  against the number of nodes search expands rather than against `h*`. On
+  blocksworld this beats `h_ff` by ~4× in expansions and ~15× on the clock, at
+  instance sizes three times larger than it trained on.
+  ([how, and when it fails](#learned-heuristics-))
 - ⏱️ **Search budgets** on every planner: bound a run by nodes or by seconds and
   a truncated result says so, so "we stopped looking" never masquerades as
   "no plan exists".
@@ -69,17 +74,19 @@ Requires Python ≥ 3.9. Using [uv](https://docs.astral.sh/uv/) (recommended):
 
 ```bash
 uv venv
-uv pip install -e ".[dev,viz]"   # 'viz' pulls matplotlib for charts and animations
+uv pip install -e ".[dev,viz,learn]"   # viz = matplotlib charts, learn = numpy (speed only)
 ```
 
 or with plain pip:
 
 ```bash
-python -m pip install -e ".[dev,viz]"
+python -m pip install -e ".[dev,viz,learn]"
 ```
 
-The core framework needs nothing but the standard library — the `viz` extra is
-only for the matplotlib charts.
+The core framework needs nothing but the standard library. `viz` is only for
+the matplotlib charts; `learn` is only for speed — `jupyddl.learn` trains and
+evaluates on the standard library alone, NumPy just makes it one to two orders
+of magnitude faster.
 
 ## Command line ⚔️
 
@@ -294,6 +301,53 @@ ladder = [write_instance("gripper", "instances/", size=n, seed=1)
 `random-strips` plants a reachable chain and buries it in distractor actions:
 purely random operators are almost always unsolvable, which makes for a useless
 benchmark. The test suite grounds and solves everything each generator emits.
+
+## Learned heuristics 🧠
+
+Every solved instance is a labelled trajectory: the cost of a plan's suffix from
+any state on it is that state's cost-to-go. `jupyddl learn` turns a corpus of
+those into a heuristic, then — optionally — stops imitating `h*` and starts
+optimising the thing that actually matters, the number of nodes search expands.
+
+```bash
+# generate a ladder, solve it, fit a heuristic, tune it on search cost
+jupyddl learn blocksworld --sizes 3-6 --cem 10 --evaluate 9-13 -o bw.heur.json
+
+# then use it anywhere a heuristic name is accepted
+jupyddl solve domain.pddl problem.pddl -s gbfs -H learned:bw.heur.json
+jupyddl benchmark demos --planners gbfs --heuristic learned:bw.heur.json
+```
+
+Trained on 3–6 block instances, evaluated on 9–13 block instances it has never
+seen, against greedy best-first search:
+
+| heuristic | coverage | expansions | seconds | plan cost |
+|---|---|---|---|---|
+| **`learned`** | 1.00 | **137** | **0.038** | **48.2** |
+| `hff` | 1.00 | 518 | 0.561 | 51.8 |
+| `goalcount` | 1.00 | 2483 | 0.169 | 51.0 |
+
+Nearly four times fewer expansions than `hff` and fifteen times faster, because
+the network is a thousand multiply-adds and `hff` is a relaxed-plan extraction.
+Those are the numbers the command above prints, on one CPU, in about a minute.
+
+It does not always win — on logistics it loses to `hff` by 6× and the reason is
+exact rather than mysterious: that domain has two predicates, so the feature
+vector cannot tell *which* package is where, only how many are somewhere. That
+result, the RL formulation, and what to build next are written up in
+[`.docs/`](.docs/).
+
+```python
+from jupyddl.learn import learn_heuristic
+
+bundle = learn_heuristic("gripper", sizes=range(2, 6), cem_iterations=10)
+bundle.save("gripper.heur.json")
+```
+
+The learning stack is stdlib-only like the rest of the core; `pip install
+jupyddl[learn]` adds NumPy purely for speed. A learned heuristic is **not
+admissible** — nothing in the objective bounds it from above — so pair it with
+`gbfs`, or `wastar` if you want a bounded-suboptimality knob.
 
 ## Soft goals and trajectory constraints 🎯
 
