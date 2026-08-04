@@ -1,0 +1,163 @@
+{
+ "after": {
+  "blind": {
+   "cost": 0.0,
+   "coverage": 0.0,
+   "expanded": 0.0,
+   "seconds": 0.0
+  },
+  "goalcount": {
+   "cost": 51.0,
+   "coverage": 1.0,
+   "expanded": 2483.4,
+   "seconds": 0.1542
+  },
+  "hff": {
+   "cost": 51.8,
+   "coverage": 1.0,
+   "expanded": 518.3,
+   "seconds": 0.5337
+  },
+  "learned": {
+   "cost": 48.2,
+   "coverage": 1.0,
+   "expanded": 137.1,
+   "seconds": 0.0365
+  }
+ },
+ "before": {
+  "blind": {
+   "cost": 0.0,
+   "coverage": 0.0,
+   "expanded": 0.0,
+   "seconds": 0.0
+  },
+  "goalcount": {
+   "cost": 51.0,
+   "coverage": 1.0,
+   "expanded": 2483.4,
+   "seconds": 0.1612
+  },
+  "hff": {
+   "cost": 51.8,
+   "coverage": 1.0,
+   "expanded": 518.3,
+   "seconds": 0.5578
+  },
+  "learned": {
+   "cost": 49.1,
+   "coverage": 0.9,
+   "expanded": 365.6,
+   "seconds": 0.1438
+  }
+ },
+ "budget": 30000,
+ "cem_seconds": 38.99109729299994,
+ "corpus": 118,
+ "eval_sizes": [
+  9,
+  13
+ ],
+ "features": 14,
+ "flat": {
+  "easy_after": 12.25,
+  "easy_before": 12.833333333333334,
+  "hard_after": 100.75,
+  "hard_before": 152.125
+ },
+ "instances": 12,
+ "logistics": {
+  "blocks_top1": 0.9230769230769231,
+  "features": 8,
+  "hff": 34.666666666666664,
+  "learned": 203.83333333333334,
+  "predicates": [
+   "at",
+   "in"
+  ],
+  "top1": 0.6560509554140127
+ },
+ "mae": 0.9205159587205748,
+ "parameters": 1025,
+ "per_instance": [
+  {
+   "imitation": 77,
+   "instance": "blocksworld-09-7777",
+   "solved": true,
+   "tuned": 70
+  },
+  {
+   "imitation": 126,
+   "instance": "blocksworld-09-7778",
+   "solved": true,
+   "tuned": 68
+  },
+  {
+   "imitation": 70,
+   "instance": "blocksworld-10-7777",
+   "solved": true,
+   "tuned": 58
+  },
+  {
+   "imitation": 287,
+   "instance": "blocksworld-10-7778",
+   "solved": true,
+   "tuned": 217
+  },
+  {
+   "imitation": 113,
+   "instance": "blocksworld-11-7777",
+   "solved": true,
+   "tuned": 81
+  },
+  {
+   "imitation": 150,
+   "instance": "blocksworld-11-7778",
+   "solved": true,
+   "tuned": 111
+  },
+  {
+   "imitation": 349,
+   "instance": "blocksworld-12-7777",
+   "solved": true,
+   "tuned": 227
+  },
+  {
+   "imitation": 114,
+   "instance": "blocksworld-12-7778",
+   "solved": true,
+   "tuned": 70
+  },
+  {
+   "imitation": 30000,
+   "instance": "blocksworld-13-7777",
+   "solved": false,
+   "tuned": 214
+  },
+  {
+   "imitation": 2004,
+   "instance": "blocksworld-13-7778",
+   "solved": true,
+   "tuned": 255
+  }
+ ],
+ "predicates": [
+  "clear",
+  "handempty",
+  "holding",
+  "on",
+  "ontable"
+ ],
+ "sigma": {
+  "hi": 0.15,
+  "hi_mean": 137.1,
+  "lo": 0.05,
+  "lo_mean": 1730.3
+ },
+ "top1": 0.9230769230769231,
+ "train_seconds": 0.06553611000003912,
+ "train_sizes": [
+  3,
+  6
+ ]
+}

@@ -21,6 +21,7 @@
     <button class="navlink active" data-view="solve" aria-current="page">Solve</button>
     <button class="navlink" data-view="experiment">Experiment</button>
     <button class="navlink" data-view="requirements">PDDL support</button>
+    <button class="navlink" data-view="research">Research</button>
     <button class="navlink" data-view="generate">Generate</button>
   </nav>
   <div class="topbar-actions">
@@ -31,15 +32,17 @@
   </div>
 </header>
 
-<div id="boot" class="boot">
-  <div class="boot-inner">
-    <div class="spinner" aria-hidden="true"></div>
-    <p id="boot-text">Starting the Python runtime…</p>
-    <p class="boot-note">The planner runs entirely in your browser. Nothing is uploaded.</p>
-  </div>
+<!-- A status bar rather than a splash screen. Most of this page is text and
+     measurements that need no Python at all; making every visitor wait behind
+     a 10 MB WebAssembly download to read them would be silly. The runtime
+     loads underneath, and only the controls that need it stay disabled. -->
+<div id="boot" class="bootbar" role="status">
+  <div class="spinner" aria-hidden="true"></div>
+  <p id="boot-text">Starting the Python runtime…</p>
+  <p class="boot-note">It runs entirely in your browser. Nothing is uploaded.</p>
 </div>
 
-<main id="app" hidden>
+<main id="app">
 
   <!-- ================================================== SOLVE =========== -->
   <section class="view active" id="view-solve">
@@ -250,6 +253,106 @@
           <tbody></tbody>
         </table>
       </div>
+    </div>
+  </section>
+
+
+  <!-- =============================================== RESEARCH =========== -->
+  <section class="view" id="view-research">
+    <div class="pane wide">
+      <div class="pane-head">
+        <h2>Learned heuristics</h2>
+        <span class="hint" id="res-summary"></span>
+      </div>
+      <p class="prose">
+        A planner's heuristic is a learned function waiting to happen. Every
+        solved instance is a labelled trajectory: the cost of a plan's suffix
+        from any state on it is that state's cost-to-go. Fitting a network to
+        those labels is <strong>imitation</strong>. But imitation optimises a
+        proxy — what we actually want is the heuristic that makes search expand
+        the fewest nodes, and that is not a differentiable function of the
+        weights. Optimising it directly, with the planner as a black box, is
+        where this becomes <strong>reinforcement learning</strong>.
+      </p>
+
+      <div class="stats" id="res-stats"></div>
+
+      <h3 class="subhead">Trained small, judged large</h3>
+      <p class="note" id="res-caption"></p>
+      <div class="table-scroll">
+        <table class="data-table" id="res-table">
+          <caption>Greedy best-first search on held-out instances</caption>
+          <thead>
+            <tr>
+              <th scope="col">Heuristic</th>
+              <th scope="col">Coverage</th>
+              <th scope="col">Nodes expanded</th>
+              <th scope="col">Seconds</th>
+              <th scope="col">Plan cost</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h3 class="subhead">Read that mean with care</h3>
+      <p class="note">
+        The held-out set has a heavy tail. Most instances sit in a narrow band
+        and one moves the average on its own — the instance imitation could not
+        solve at all. Reporting only the mean would be close to reporting that
+        one instance.
+      </p>
+      <div class="table-scroll">
+        <table class="data-table" id="res-spread">
+          <caption>Per instance, imitation versus tuned</caption>
+          <thead>
+            <tr>
+              <th scope="col">Instance</th>
+              <th scope="col">Imitation</th>
+              <th scope="col">After tuning</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h3 class="subhead">Where it loses, and why</h3>
+      <p class="note" id="res-logistics"></p>
+
+      <h3 class="subhead">What we got wrong</h3>
+      <ul class="prose bullets" id="res-corrections"></ul>
+
+      <h3 class="subhead">Read further</h3>
+      <p class="note">
+        The full write-up — prior work, the MDP the RL stage corresponds to, why
+        the obvious policy gradient is hard here, and a roadmap — lives in the
+        repository.
+      </p>
+      <div class="filterbar">
+        <a class="filter" target="_blank" rel="noopener"
+           href="https://github.com/APLA-Toolbox/PythonPDDL/blob/main/.docs/learned-heuristics.md">Imitation &amp; prior work</a>
+        <a class="filter" target="_blank" rel="noopener"
+           href="https://github.com/APLA-Toolbox/PythonPDDL/blob/main/.docs/rl-for-search.md">RL for search</a>
+        <a class="filter" target="_blank" rel="noopener"
+           href="https://github.com/APLA-Toolbox/PythonPDDL/blob/main/.docs/roadmap.md">Roadmap</a>
+        <a class="filter" target="_blank" rel="noopener"
+           href="https://github.com/APLA-Toolbox/PythonPDDL/blob/main/promo/jupyddl-rl.mp4">97-second video</a>
+      </div>
+
+      <h3 class="subhead">Train one yourself</h3>
+      <pre class="codeblock"><code>pip install "jupyddl[learn]"
+
+jupyddl learn blocksworld --sizes 3-6 --seeds-per-size 3 \
+    --cem 10 --cem-sizes 9-12 --evaluate 9-13 -o bw.heur.json
+
+jupyddl solve domain.pddl problem.pddl -s gbfs -H learned:bw.heur.json</code></pre>
+      <p class="note">
+        Training runs on the standard library alone; the <code>learn</code>
+        extra adds NumPy purely for speed. A learned heuristic is
+        <strong>not admissible</strong> — nothing in the objective bounds it
+        from above — so pair it with <code>gbfs</code>, or <code>wastar</code>
+        for a bounded-suboptimality knob, never with an optimality claim.
+      </p>
     </div>
   </section>
 

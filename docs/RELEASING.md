@@ -47,9 +47,15 @@ publish unless it also runs in that environment.
 Repeat on <https://test.pypi.org> with environment name `testpypi` if you want
 the dry run below to work.
 
-Until this exists the `pypi` job fails with an OIDC error. Everything before it
-still succeeds, so a tag pushed early leaves you with verified artifacts and no
-partial publish — re-run the job once the publisher is configured.
+Until this exists the `pypi` job fails with an OIDC error. Nothing else is
+blocked by it: the build still verifies, the tag is still created and the
+GitHub Release is still cut with the artifacts attached. Re-running the failed
+job once the publisher is configured completes the release.
+
+That decoupling is deliberate. A GitHub Release records that a version was cut
+from a verified commit; PyPI is a downstream channel that can fail for reasons
+the code has nothing to do with. Losing the release because the upload failed
+would leave no record of the version and force a full re-run to get one.
 
 ### Optional: require a human to approve each publish
 

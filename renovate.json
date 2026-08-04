@@ -1,5 +1,21 @@
 {
   "extends": [
-    "config:base"
+    "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": [
+        "The `python-version` pins in build.yml, pages.yml and release.yml are",
+        "not a dependency to keep current -- they choose which interpreter",
+        "builds the wheel, bundles web/dist and cuts the release. `tests`",
+        "already runs the whole supported range (3.9-3.14) on every push, and",
+        "the wheel is py3-none-any, so building on the newest interpreter buys",
+        "nothing and ties the release pipeline to whatever is newest on the",
+        "runner. Moving that pin should be a deliberate edit, not a bot PR."
+      ],
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["python"],
+      "enabled": false
+    }
   ]
 }

@@ -90,10 +90,94 @@ def test_bundle_is_ordered_independently_of_the_filesystem(sources):
     assert list(sources) == sorted(sources)
 
 
+def test_capabilities_bundle_agrees_with_the_registries():
+    """The page renders the support matrix *before* Python loads.
+
+    It does that from ``capabilities.json``, which means a stale bundle no
+    longer merely lags — it states something untrue about the library to every
+    visitor, and keeps stating it for the seconds before the runtime arrives
+    and overwrites it.
+    """
+    path = os.path.join(DIST, "capabilities.json")
+    if not os.path.exists(path):
+        pytest.skip("web bundle not built")
+    with open(path, encoding="utf-8") as handle:
+        caps = json.load(handle)
+
+    from jupyddl.generator import describe_generators
+    from jupyddl.heuristics import HEURISTICS
+    from jupyddl.requirements import as_rows, summary
+    from jupyddl.search import describe_planners
+
+    assert caps["requirements"] == as_rows()
+    assert caps["requirement_summary"] == summary()
+    assert caps["planners"] == describe_planners()
+    assert caps["heuristics"] == sorted(HEURISTICS)
+    assert caps["generators"] == describe_generators()
+
+
+def test_research_bundle_quotes_the_measured_run():
+    """The Research view must not invent numbers.
+
+    ``collect_research`` distils ``promo/rl-data.json`` — the cache the RL
+    video renders from — so page and video quote one measured run and cannot
+    drift apart. When that file is absent the builder emits ``{}`` and the
+    view says so; that is the only other acceptable state.
+    """
+    path = os.path.join(DIST, "research.json")
+    if not os.path.exists(path):
+        pytest.skip("web bundle not built")
+    with open(path, encoding="utf-8") as handle:
+        research = json.load(handle)
+
+    measured = os.path.join(REPO_ROOT, "promo", "rl-data.json")
+    if not research:
+        assert not os.path.exists(measured)
+        return
+    with open(measured, encoding="utf-8") as handle:
+        data = json.load(handle)
+
+    assert research["corpus"] == data["corpus"]["count"]
+    assert research["parameters"] == data["imitation"]["parameters"]
+    assert research["after"]["learned"]["expanded"] == round(
+        data["transfer_after"]["learned"]["mean_expanded"], 1
+    )
+    assert research["after"]["hff"]["expanded"] == round(
+        data["transfer_after"]["hff"]["mean_expanded"], 1
+    )
+    # A learned heuristic is not admissible, so the claim that survives is
+    # coverage, not cost. Pin it: the view leads with it.
+    assert research["after"]["learned"]["coverage"] == 1.0
+
+
+def test_static_views_do_not_wait_for_the_runtime():
+    """Reading the page must not cost a 10 MB WebAssembly download.
+
+    Most of the workbench is prose, a support matrix and measurements, none of
+    which need Python. Hiding ``<main>`` until Pyodide reports ready made all
+    of it unreachable behind a spinner, which is how this regressed once.
+    """
+    with open(os.path.join(WEB, "index.html"), encoding="utf-8") as handle:
+        markup = handle.read()
+    assert '<main id="app">' in markup, "the app shell must render immediately"
+
+    with open(os.path.join(WEB, "app.js"), encoding="utf-8") as handle:
+        script = handle.read()
+    # The controls, and only the controls, are what the runtime gates.
+    assert "state.ready" in script
+    assert "dist/capabilities.json" in script
+
+
 def test_builder_is_reproducible(tmp_path):
     """Running the builder again must not change the committed bundle."""
     before = {}
-    for name in ("jupyddl-sources.json", "demos.json", "build.json"):
+    for name in (
+        "jupyddl-sources.json",
+        "demos.json",
+        "build.json",
+        "capabilities.json",
+        "research.json",
+    ):
         path = os.path.join(DIST, name)
         if not os.path.exists(path):
             pytest.skip("web bundle not built")

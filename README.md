@@ -255,7 +255,7 @@ core is stdlib-only there is no wheel to resolve: the package sources are handed
 straight to the interpreter. Everything is computed in your tab; nothing is
 uploaded.
 
-Four views:
+Five views:
 
 - **Solve** — edit the PDDL, pick a planner, a heuristic and a budget, then watch
   the cost curves and the search wavefront animate while it works. Or ground
@@ -265,8 +265,16 @@ Four views:
   sorts on any column, and the whole run exports to CSV or JSON.
 - **PDDL support** — the requirement matrix, filterable by support level, read
   straight out of the library rather than transcribed.
+- **Research** — what `jupyddl.learn` measured: the imitation result, what the
+  reinforcement stage added, the domain where the whole approach loses and the
+  exact reason, and the three claims that turned out to be wrong.
 - **Generate** — produce a reproducible instance from a *(kind, size, seed)* and
   open it in Solve.
+
+The pages that are only text and measurements — **PDDL support** and
+**Research** — render immediately from the committed bundle. Only the controls
+that actually run a planner wait for the interpreter, so reading the workbench
+never costs a 10 MB download.
 
 <div align="center">
 
