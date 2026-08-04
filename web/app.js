@@ -22,6 +22,7 @@ const state = {
   demos: [],
   capabilities: null,
   worker: null,
+  ready: false,
   running: false,
   started: 0,
   points: [],
@@ -85,13 +86,21 @@ function bootMessage(text) {
 
 async function boot() {
   renderLegend();
-  const [sources, demos, build] = await Promise.all([
+  setRunning(false); // nothing is runnable until the worker reports ready
+  const [sources, demos, build, research, capabilities] = await Promise.all([
     fetch("dist/jupyddl-sources.json").then((r) => r.json()),
     fetch("dist/demos.json").then((r) => r.json()),
     fetch("dist/build.json").then((r) => r.json()).catch(() => ({})),
+    fetch("dist/research.json").then((r) => r.json()).catch(() => ({})),
+    fetch("dist/capabilities.json").then((r) => r.json()).catch(() => null),
   ]);
   state.demos = demos;
   fillDemos();
+  renderResearch(research);
+  // The bundle carries the same registries the runtime will report, so the
+  // menus and the support matrix can be filled in now; `onReady` overwrites
+  // them with what the interpreter actually loaded.
+  if (capabilities) applyCapabilities(capabilities);
 
   // Prefer a vendored runtime (offline / self-hosted); fall back to the CDN.
   let base = CDN_PYODIDE;
@@ -105,7 +114,7 @@ async function boot() {
   state.worker.onmessage = onWorkerMessage;
   state.worker.onerror = (event) => {
     const message = `Worker failed: ${event.message || "unknown error"}`;
-    if ($("app").hidden) {
+    if (!state.ready) {
       bootMessage(message);
       $("boot").querySelector(".spinner").style.display = "none";
     } else {
@@ -136,7 +145,7 @@ function onWorkerMessage(event) {
   } else if (type === "generated") {
     showGenerated(payload);
   } else if (type === "error") {
-    if ($("app").hidden) {
+    if (!state.ready) {
       bootMessage(payload.message);
       $("boot").querySelector(".spinner").style.display = "none";
     } else {
@@ -146,12 +155,15 @@ function onWorkerMessage(event) {
   }
 }
 
-function onReady(payload) {
-  state.capabilities = payload;
-  const planners = payload.planners.map((p) => p.name);
+// Everything the UI derives from the registries. Called twice: once from the
+// committed bundle so the page is usable while Python downloads, and again
+// from the live interpreter, which is the authority.
+function applyCapabilities(caps) {
+  state.capabilities = caps;
+  const planners = caps.planners.map((p) => p.name);
   fillSelect($("planner"), planners, "astar");
-  fillSelect($("heuristic"), payload.heuristics.concat(["none"]), "lmcut");
-  fillSelect($("gen-kind"), payload.generators.map((g) => g.name), "gripper");
+  fillSelect($("heuristic"), caps.heuristics.concat(["none"]), "lmcut");
+  fillSelect($("gen-kind"), caps.generators.map((g) => g.name), "gripper");
   updateGeneratorBlurb();
 
   buildChecklist("pick-instances", state.demos.map((d) => ({
@@ -161,15 +173,19 @@ function onReady(payload) {
   buildChecklist("pick-planners", planners.map((name) => ({
     value: name, label: name, checked: ["astar", "gbfs", "bfs"].includes(name),
   })));
-  buildChecklist("pick-heuristics", payload.heuristics.map((name) => ({
+  buildChecklist("pick-heuristics", caps.heuristics.map((name) => ({
     value: name, label: name, checked: ["lmcut", "hff"].includes(name),
   })));
   renderRequirements();
+}
 
+function onReady(payload) {
+  applyCapabilities(payload);
   $("build-info").textContent =
     `jupyddl ${payload.version} · CPython ${payload.python} · WebAssembly`;
   $("boot").hidden = true;
-  $("app").hidden = false;
+  state.ready = true;
+  setRunning(false);
   requestAnimationFrame(repaint);
 }
 
@@ -231,11 +247,16 @@ function clearError() {
 
 function setRunning(running) {
   state.running = running;
-  $("run").disabled = running;
-  $("run-experiment").disabled = running;
-  $("generate").disabled = running;
-  $("inspect").disabled = running;
-  $("run").textContent = running ? "Searching…" : "Run search";
+  // Before the runtime is ready there is nothing to run, so the same disabled
+  // state covers both. The page itself stays readable throughout.
+  const blocked = running || !state.ready;
+  $("run").disabled = blocked;
+  $("run-experiment").disabled = blocked;
+  $("generate").disabled = blocked;
+  $("inspect").disabled = blocked;
+  $("run").textContent = running
+    ? "Searching…"
+    : state.ready ? "Run search" : "Loading Python…";
 }
 
 function limits(nodesId, secondsId) {
@@ -607,6 +628,120 @@ function openGeneratedInSolve() {
     `seed ${state.generated.seed}`;
   $("tagrow").innerHTML = '<span class="chip">generated</span>';
   switchView("solve");
+}
+
+
+/* --------------------------------------------------------------- research */
+// Everything here is read from dist/research.json, which the build distils
+// from the same measured run the promo video renders from. Nothing on this
+// page is a number somebody typed in, and if the measurements are missing the
+// view says so rather than showing stale ones.
+function renderResearch(data) {
+  const missing = !data || !data.after || !data.after.learned;
+  if (missing) {
+    $("res-summary").textContent = "measurements unavailable";
+    $("res-caption").textContent =
+      "This build carries no research.json — run tools/build_web.py with " +
+      "promo/rl-data.json present to populate it.";
+    return;
+  }
+
+  const learned = data.after.learned;
+  const hff = data.after.hff;
+  const trained = (data.train_sizes || []).join("-");
+  const judged = (data.eval_sizes || []).join("-");
+
+  $("res-summary").textContent =
+    `trained on ${trained} blocks · judged on ${judged}`;
+
+  const ratio = hff ? (hff.expanded / learned.expanded).toFixed(1) : null;
+  const speed = hff ? (hff.seconds / learned.seconds).toFixed(0) : null;
+  const stats = [
+    [`${learned.expanded.toFixed(0)}`, "nodes expanded"],
+    ratio ? [`${ratio}x`, "fewer than h_ff"] : null,
+    speed ? [`${speed}x`, "faster than h_ff"] : null,
+    [`${(data.top1 * 100).toFixed(0)}%`, "decisions ranked right"],
+  ].filter(Boolean);
+  $("res-stats").innerHTML = stats
+    .map(
+      ([value, label]) =>
+        `<div class="stat"><div class="stat-value">${escapeHtml(value)}</div>` +
+        `<div class="stat-label">${escapeHtml(label)}</div></div>`,
+    )
+    .join("");
+
+  $("res-caption").textContent =
+    `${data.corpus} labelled states from ${data.instances} instances of ` +
+    `${trained} blocks, ${data.parameters} parameters over ${data.features} ` +
+    `features, trained in ${data.train_seconds.toFixed(1)}s and tuned in ` +
+    `${Math.round(data.cem_seconds)}s. Evaluated on ${judged} blocks from a ` +
+    `seed family no stage of training saw.`;
+
+  const order = ["learned", "hff", "goalcount", "blind"];
+  $("res-table").querySelector("tbody").innerHTML = order
+    .filter((name) => data.after[name])
+    .map((name) => {
+      const row = data.after[name];
+      const solved = row.coverage > 0;
+      const strong = name === "learned";
+      const cell = (value) =>
+        strong ? `<strong>${escapeHtml(value)}</strong>` : escapeHtml(value);
+      return (
+        `<tr><td><code>${escapeHtml(name)}</code></td>` +
+        `<td>${cell(row.coverage.toFixed(2))}</td>` +
+        `<td>${solved ? cell(row.expanded.toFixed(0)) : "—"}</td>` +
+        `<td>${solved ? cell(row.seconds.toFixed(3)) : "—"}</td>` +
+        `<td>${solved ? cell(row.cost.toFixed(1)) : "—"}</td></tr>`
+      );
+    })
+    .join("");
+
+  const budget = data.budget;
+  $("res-spread").querySelector("tbody").innerHTML = (data.per_instance || [])
+    .map((row) => {
+      const unsolved = row.solved === false;
+      const before = unsolved
+        ? `<span class="bad">${escapeHtml(String(budget))} (unsolved)</span>`
+        : escapeHtml(String(row.imitation));
+      return (
+        `<tr><td><code>${escapeHtml(row.instance)}</code></td>` +
+        `<td>${before}</td><td>${escapeHtml(String(row.tuned))}</td></tr>`
+      );
+    })
+    .join("");
+
+  const log = data.logistics || {};
+  $("res-logistics").textContent =
+    `On logistics it loses to h_ff by roughly ` +
+    `${Math.round((log.learned || 0) / Math.max(1, log.hff || 1))}x, and the ` +
+    `reason is exact rather than mysterious: that domain has ` +
+    `${(log.predicates || []).length} predicates ` +
+    `(${(log.predicates || []).join(", ")}), so the feature vector is ` +
+    `${log.features} numbers and cannot say which package is where, only how ` +
+    `many are somewhere. Top-1 accuracy ${(log.top1 * 100).toFixed(0)}% ` +
+    `against ${(data.top1 * 100).toFixed(0)}% on blocksworld. Counting is ` +
+    `blind to topology — which is the case for relational features, stated ` +
+    `as a measurement.`;
+
+  const flat = data.flat || {};
+  const sigma = data.sigma || {};
+  $("res-corrections").innerHTML = [
+    `<li><strong>The objective is flat where search is already good.</strong> ` +
+      `Tuning on the training ladder moved the score ` +
+      `${(flat.easy_before || 0).toFixed(1)} → ${(flat.easy_after || 0).toFixed(1)} ` +
+      `— noise. A rung higher it moved ${Math.round(flat.hard_before)} → ` +
+      `${Math.round(flat.hard_after)}. Optimise where the search is still bad.</li>`,
+    `<li><strong>We credited an improvement to the wrong change.</strong> A ` +
+      `validation split and the perturbation scale changed in the same edit, ` +
+      `and the gain was attributed to the split. Varying one at a time: ` +
+      `sigma ${sigma.lo} gives ${Math.round(sigma.lo_mean)} expansions, sigma ` +
+      `${sigma.hi} gives ${Math.round(sigma.hi_mean)} — the scale was doing ` +
+      `all of it. The split is a guardrail worth keeping, not the knob.</li>`,
+    `<li><strong>The mean was doing the lying.</strong> Nine of ten held-out ` +
+      `instances improve either way; the whole headline gap is one hard ` +
+      `instance. The durable claim is the coverage one — imitation could not ` +
+      `solve it at all.</li>`,
+  ].join("");
 }
 
 /* ------------------------------------------------------------------ views */

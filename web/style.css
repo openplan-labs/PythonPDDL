@@ -127,12 +127,16 @@ button:focus-visible, select:focus-visible, textarea:focus-visible {
 .secondary { font-weight: 600; }
 
 /* ------------------------------------------------------------------ boot */
-.boot { display: grid; place-items: center; min-height: 70vh; padding: 24px; }
-.boot-inner { text-align: center; max-width: 420px; }
-.boot-note { color: var(--text-muted); font-size: 13px; }
+.bootbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 20px; border-bottom: 1px solid var(--border);
+  background: var(--surface-1); font-size: 13px;
+}
+.bootbar p { margin: 0; }
+.boot-note { color: var(--text-muted); }
 .spinner {
-  width: 34px; height: 34px; margin: 0 auto 18px;
-  border: 3px solid var(--grid); border-top-color: var(--series-1);
+  width: 15px; height: 15px; flex: none;
+  border: 2px solid var(--grid); border-top-color: var(--series-1);
   border-radius: 50%; animation: spin 900ms linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -419,3 +423,20 @@ main { padding: 18px 20px 40px; max-width: 1500px; margin: 0 auto; }
 #req-table th { text-align: left; }
 /* Cut the scrolling checklists on a whole row rather than through one. */
 .checklist { max-height: 176px; padding-right: 2px; }
+
+/* ---- Research view ------------------------------------------------- */
+.subhead {
+  font-size: 15px; font-weight: 650; letter-spacing: -0.01em;
+  margin: 22px 0 6px; color: var(--text-primary);
+}
+.subhead:first-of-type { margin-top: 14px; }
+.bullets { padding-left: 18px; }
+.bullets li { margin-bottom: 8px; }
+.codeblock {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 14px; overflow-x: auto;
+  font-size: 12.5px; line-height: 1.6; margin: 0 0 10px;
+}
+.codeblock code { color: var(--text-secondary); white-space: pre; }
+/* The links in this view reuse .filter, which is a <button> elsewhere. */
+a.filter { text-decoration: none; display: inline-block; }

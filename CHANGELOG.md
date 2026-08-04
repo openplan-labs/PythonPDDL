@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **A Research view in the workbench.** `jupyddl.learn` shipped in 2.3.0 with
+  its results only in `.docs/` and a video, which meant the published site said
+  nothing about the biggest addition in the release. The view carries the
+  measured run: imitation against `hff` and `goalcount`, the per-instance
+  spread behind the mean, the logistics loss and why the feature space causes
+  it, and the three claims that turned out to be wrong. Its numbers are built
+  from `promo/rl-data.json` — the same cache the RL video renders from — so the
+  page and the video cannot drift apart, and a test pins them together.
+
+### Fixed
+- **Reading the workbench no longer costs a 10 MB download.** `<main>` was
+  hidden until Pyodide reported ready, so every page of prose, the requirement
+  matrix and the new Research view sat behind a full-screen spinner waiting for
+  a runtime none of them use. The shell now renders immediately from the
+  committed bundle, the boot notice is a status bar rather than a splash
+  screen, and only the controls that actually run a planner stay disabled until
+  the interpreter arrives.
+
 ## [2.3.0] - 2026-07-31
 
 ### Added

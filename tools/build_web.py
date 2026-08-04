@@ -201,6 +201,69 @@ def collect_capabilities() -> dict:
     }
 
 
+def collect_research() -> dict:
+    """Distil the learned-heuristic measurements for the Research view.
+
+    Read from ``promo/rl-data.json`` — the cache the RL promo video renders
+    from — so the page and the video quote the same measured run and cannot
+    drift apart. Returns ``{}`` when that file is absent, and the view then
+    says so rather than showing numbers from nowhere.
+    """
+    path = os.path.join(ROOT, "promo", "rl-data.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+
+    def rows(summary):
+        return {
+            name: {
+                "expanded": round(entry["mean_expanded"], 1),
+                "seconds": round(entry["mean_seconds"], 4),
+                "cost": round(entry["mean_cost"], 1),
+                "coverage": round(entry["coverage"], 2),
+            }
+            for name, entry in summary.items()
+        }
+
+    spread = data.get("spread", {})
+    per_instance = [
+        {
+            "instance": name,
+            "imitation": spread.get("imitation", {}).get(name),
+            "tuned": spread.get("hi", {}).get("per_instance", {}).get(name),
+            "solved": spread.get("imitation_solved", {}).get(name, True),
+        }
+        for name in spread.get("instances", [])
+    ]
+
+    return {
+        "train_sizes": data.get("space", {}).get("train_sizes"),
+        "eval_sizes": data.get("space", {}).get("eval_sizes"),
+        "instances": data.get("space", {}).get("train_instances"),
+        "features": data.get("space", {}).get("features"),
+        "predicates": data.get("space", {}).get("predicates", []),
+        "corpus": data.get("corpus", {}).get("count"),
+        "parameters": data.get("imitation", {}).get("parameters"),
+        "mae": data.get("imitation", {}).get("mae"),
+        "top1": data.get("imitation", {}).get("top1"),
+        "train_seconds": data.get("imitation", {}).get("seconds"),
+        "cem_seconds": data.get("cem", {}).get("seconds"),
+        "before": rows(data.get("transfer_before", {})),
+        "after": rows(data.get("transfer_after", {})),
+        "per_instance": per_instance,
+        "flat": data.get("flat", {}),
+        "sigma": {
+            "lo": spread.get("lo", {}).get("sigma"),
+            "hi": spread.get("hi", {}).get("sigma"),
+            "lo_mean": round(spread.get("lo", {}).get("mean", 0), 1),
+            "hi_mean": round(spread.get("hi", {}).get("mean", 0), 1),
+        },
+        "logistics": data.get("logistics", {}),
+        "budget": spread.get("budget"),
+    }
+
+
 def version() -> str:
     namespace: dict = {}
     init = os.path.join(PACKAGE, "__init__.py")
@@ -224,6 +287,9 @@ def main() -> int:
     capabilities = collect_capabilities()
     with open(os.path.join(OUT, "capabilities.json"), "w", encoding="utf-8") as fh:
         json.dump(capabilities, fh, indent=1, sort_keys=True)
+    research = collect_research()
+    with open(os.path.join(OUT, "research.json"), "w", encoding="utf-8") as fh:
+        json.dump(research, fh, indent=1, sort_keys=True)
     with open(os.path.join(OUT, "build.json"), "w", encoding="utf-8") as fh:
         json.dump({"version": version(), "modules": len(sources)}, fh)
 
@@ -237,6 +303,11 @@ def main() -> int:
         f"  {len(capabilities['requirements'])} requirements, "
         f"{len(capabilities['planners'])} planners, "
         f"{len(capabilities['generators'])} generators -> web/dist/capabilities.json"
+    )
+    print(
+        "  learned-heuristic measurements -> web/dist/research.json"
+        if research
+        else "  ! no promo/rl-data.json; the Research view will say so"
     )
     return 0
 

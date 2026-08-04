@@ -75,7 +75,13 @@ native build step, and the core has zero runtime dependencies.
 - `jupyddl/viz/` — everything that imports matplotlib. Nothing in the core may
   import this package.
 - `web/` — the Pyodide playground; `tools/build_web.py` bundles the package
-  sources and demos into `web/dist` (committed).
+  sources and demos into `web/dist` (committed). It also writes
+  `capabilities.json` (the registries) and `research.json` (distilled from
+  `promo/rl-data.json`, so the page and the RL video quote one measured run).
+  Those two are rendered **before** Pyodide loads — the app shell is never
+  hidden, and only the run controls are gated on `state.ready` — so a stale
+  bundle briefly states something untrue rather than merely lagging.
+  `tests/test_web_bundle.py` pins both.
 - `tools/make_promo.py` — renders the main promo video from measured runs.
 - `tools/make_learn_promo.py` — the learned-heuristic/RL video. It re-measures
   everything including both failure modes, so it cannot drift from `.docs/`;
