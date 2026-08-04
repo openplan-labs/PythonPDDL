@@ -12,10 +12,17 @@ name: release
 # `pypi` job fails and everything before it still succeeds, so a tag never
 # leaves you with half a release and no artifacts.
 #
-# `workflow_dispatch` runs the same pipeline against TestPyPI, which is how to
-# validate a change to this file without spending a real version number. PyPI
-# releases are effectively permanent: a version can be yanked but never
-# replaced, so the dry run is worth the two minutes.
+# A release can also be cut entirely from the Actions tab, without anyone
+# pushing a tag from a laptop:
+#
+#     Actions -> release -> Run workflow -> target: pypi
+#
+# That path creates the tag itself, at the commit it built and tested, so the
+# tag can never point at something that was never verified. Choosing
+# `testpypi` instead runs the identical pipeline against TestPyPI and creates
+# no tag, which is how to validate a change to this file without spending a
+# real version number. PyPI releases are effectively permanent: a version can
+# be yanked but never replaced, so the dry run is worth the two minutes.
 
 on:
   push:
@@ -23,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Where to publish"
+        description: "Where to publish (pypi also tags and cuts the release)"
         required: true
         default: testpypi
         type: choice
@@ -168,10 +175,15 @@ jobs:
   github-release:
     name: cut the GitHub release
     needs: [build, pypi]
-    if: startsWith(github.ref, 'refs/tags/')
+    # Either a tag was pushed, or someone asked for a real release from the
+    # Actions tab. A TestPyPI dry run deliberately creates neither tag nor
+    # release -- it exists to rehearse, not to leave traces.
+    if: >-
+      startsWith(github.ref, 'refs/tags/')
+      || github.event.inputs.target == 'pypi'
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # create the release and attach the distributions
+      contents: write  # create the tag, the release, and attach the artifacts
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -180,6 +192,12 @@ jobs:
       - name: Create the release
         uses: softprops/action-gh-release@v2
         with:
+          # Named rather than inherited from the ref, so the dispatch path
+          # creates `v<version>` at this commit. The release API creates the
+          # tag when it does not exist, and the build job has already refused
+          # to get here if the version were inconsistent anywhere.
+          tag_name: v${{ needs.build.outputs.version }}
+          target_commitish: ${{ github.sha }}
           name: jupyddl ${{ needs.build.outputs.version }}
           body_path: release-notes.md
           files: dist/*
