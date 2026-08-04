@@ -254,9 +254,8 @@ function setRunning(running) {
   $("run-experiment").disabled = blocked;
   $("generate").disabled = blocked;
   $("inspect").disabled = blocked;
-  $("run").textContent = running
-    ? "Searching…"
-    : state.ready ? "Run search" : "Loading Python…";
+  if (running) $("run").textContent = "Searching…";
+  else $("run").textContent = state.ready ? "Run search" : "Loading Python…";
 }
 
 function limits(nodesId, secondsId) {
@@ -637,23 +636,29 @@ function openGeneratedInSolve() {
 // page is a number somebody typed in, and if the measurements are missing the
 // view says so rather than showing stale ones.
 function renderResearch(data) {
-  const missing = !data || !data.after || !data.after.learned;
-  if (missing) {
+  if (!data || !data.after || !data.after.learned) {
     $("res-summary").textContent = "measurements unavailable";
     $("res-caption").textContent =
       "This build carries no research.json — run tools/build_web.py with " +
       "promo/rl-data.json present to populate it.";
     return;
   }
-
-  const learned = data.after.learned;
-  const hff = data.after.hff;
   const trained = (data.train_sizes || []).join("-");
   const judged = (data.eval_sizes || []).join("-");
-
   $("res-summary").textContent =
     `trained on ${trained} blocks · judged on ${judged}`;
+  researchHeadline(data, trained, judged);
+  researchTable(data);
+  researchSpread(data);
+  researchNarrative(data);
+}
 
+// The four numbers above the fold, and the sentence that says what they were
+// measured on. Both are ratios against h_ff, which is the comparison that
+// matters: beating a weaker baseline would prove nothing.
+function researchHeadline(data, trained, judged) {
+  const learned = data.after.learned;
+  const hff = data.after.hff;
   const ratio = hff ? (hff.expanded / learned.expanded).toFixed(1) : null;
   const speed = hff ? (hff.seconds / learned.seconds).toFixed(0) : null;
   const stats = [
@@ -676,7 +681,9 @@ function renderResearch(data) {
     `features, trained in ${data.train_seconds.toFixed(1)}s and tuned in ` +
     `${Math.round(data.cem_seconds)}s. Evaluated on ${judged} blocks from a ` +
     `seed family no stage of training saw.`;
+}
 
+function researchTable(data) {
   const order = ["learned", "hff", "goalcount", "blind"];
   $("res-table").querySelector("tbody").innerHTML = order
     .filter((name) => data.after[name])
@@ -695,7 +702,12 @@ function renderResearch(data) {
       );
     })
     .join("");
+}
 
+// Every held-out instance, not just the mean. The set has a heavy tail and one
+// instance moves the average on its own, so a mean alone would be close to a
+// report of that instance.
+function researchSpread(data) {
   const budget = data.budget;
   $("res-spread").querySelector("tbody").innerHTML = (data.per_instance || [])
     .map((row) => {
@@ -709,7 +721,11 @@ function renderResearch(data) {
       );
     })
     .join("");
+}
 
+// The domain this approach loses on, and the three claims that were wrong.
+// Both are built from the same measured run as the numbers above them.
+function researchNarrative(data) {
   const log = data.logistics || {};
   $("res-logistics").textContent =
     `On logistics it loses to h_ff by roughly ` +
