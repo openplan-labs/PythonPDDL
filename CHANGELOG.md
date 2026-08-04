@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.3.0] - 2026-07-31
 
 ### Added
 - **`jupyddl.learn`: heuristics trained from your own solved plans.** Every
@@ -24,7 +24,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   distribution shift, bootstrapping for the instances too hard to label, and
   the cross-entropy method over the weight vector with the planner as a black
   box. On blocksworld this took a held-out set from 366 expansions and 0.90
-  coverage to 131 and 1.00.
+  coverage to 137 and 1.00 — though see `.docs/rl-for-search.md`: that mean is
+  dominated by one hard instance, and the durable claim is the coverage one.
 - **`jupyddl learn`**, and `learned:<model.json>` accepted anywhere a heuristic
   name is — `solve`, `benchmark`, the API. `make_heuristic` also passes through
   an already-built heuristic, so callers holding a trained model need not
