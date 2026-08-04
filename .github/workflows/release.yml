@@ -190,7 +190,7 @@ jobs:
           name: distributions
 
       - name: Create the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           # Named rather than inherited from the ref, so the dispatch path
           # creates `v<version>` at this commit. The release API creates the
