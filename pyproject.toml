@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jupyddl"
-version = "2.2.0"
+version = "2.3.0"
 description = "A pure-Python PDDL planning framework: parser, grounding, classical-to-SOTA planners, heuristics and benchmarking."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -12,8 +12,21 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "Erwin Lejeune" }]
 keywords = ["pddl", "planning", "heuristic-search", "a-star", "lm-cut", "automated-planning"]
 classifiers = [
-    "Programming Language :: Python :: 3",
+    # Beta rather than Stable on purpose: the planning core has been steady for
+    # a while, but `jupyddl.learn` is new and its API will move.
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 # The core framework is intentionally dependency-free (stdlib only) so it is
@@ -36,6 +49,9 @@ jupyddl = "jupyddl.cli:main"
 [project.urls]
 Homepage = "https://github.com/APLA-Toolbox/PythonPDDL"
 Repository = "https://github.com/APLA-Toolbox/PythonPDDL"
+Changelog = "https://github.com/APLA-Toolbox/PythonPDDL/blob/main/CHANGELOG.md"
+Issues = "https://github.com/APLA-Toolbox/PythonPDDL/issues"
+Workbench = "https://apla-toolbox.github.io/PythonPDDL/"
 
 [tool.hatch.build.targets.wheel]
 packages = ["jupyddl"]

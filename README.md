@@ -13,6 +13,8 @@ actually *watch*. ✨
 
 <div align="center">
 
+[![PyPI](https://img.shields.io/pypi/v/jupyddl.svg)](https://pypi.org/project/jupyddl/)
+[![Python versions](https://img.shields.io/pypi/pyversions/jupyddl.svg)](https://pypi.org/project/jupyddl/)
 ![tests](https://github.com/APLA-Toolbox/PythonPDDL/workflows/tests/badge.svg?branch=main)
 ![build](https://github.com/APLA-Toolbox/PythonPDDL/workflows/build/badge.svg?branch=main)
 [![GitHub license](https://img.shields.io/github/license/Apla-Toolbox/PythonPDDL.svg)](./LICENSE)
@@ -70,11 +72,19 @@ is trivial to install, embed, teach with, and build on.
 
 ## Install 💾
 
-Requires Python ≥ 3.9. Using [uv](https://docs.astral.sh/uv/) (recommended):
+Requires Python ≥ 3.9, and nothing else:
+
+```bash
+pip install jupyddl                 # the framework and the CLI
+pip install "jupyddl[viz]"          # + matplotlib, for the charts and animations
+pip install "jupyddl[viz,learn]"    # + numpy, which only makes learning faster
+```
+
+To work on it, from a clone, using [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv venv
-uv pip install -e ".[dev,viz,learn]"   # viz = matplotlib charts, learn = numpy (speed only)
+uv pip install -e ".[dev,viz,learn]"
 ```
 
 or with plain pip:

@@ -42,6 +42,14 @@ native build step, and the core has zero runtime dependencies.
   rebuilds `web/dist` in the same commit; reformatting a bundled source and
   committing without the rebuild would leave main in a state where `pages`
   refuses to deploy.
+- **`release`** — fires on a `v*` tag. Builds, refuses a tag that disagrees
+  with `pyproject.toml` or a `__version__` that disagrees with either, runs
+  `twine check --strict`, installs the wheel clean and plans with it, publishes
+  to PyPI over OIDC (no stored token), then cuts the GitHub Release from the
+  changelog section for that version. `docs/RELEASING.md` is the runbook,
+  including the one-time PyPI trusted-publisher setup only a maintainer can do.
+  **Bump the version in two places** — `pyproject.toml` and
+  `jupyddl/__init__.py` — and rebuild `web/dist`, which carries it too.
 - **`pages`** — bundles, refuses to deploy a stale `web/dist`, then deploys.
   Its job is called `bundle`, not `build`, because `.mergify.yml` keys a merge
   rule on a check named `build` and that has to mean the packaging workflow.

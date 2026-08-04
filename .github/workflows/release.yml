@@ -1,0 +1,189 @@
+name: release
+
+# Publish a release to PyPI and cut the GitHub Release to match.
+#
+# Push a tag and this does the rest:
+#
+#     git tag -a v2.3.0 -m "jupyddl 2.3.0" && git push origin v2.3.0
+#
+# Authentication is PyPI **Trusted Publishing** (OIDC), so there is no API
+# token in this repository's secrets to leak or rotate. That requires a
+# one-time setup on PyPI — see `docs/RELEASING.md`. Until it is done the
+# `pypi` job fails and everything before it still succeeds, so a tag never
+# leaves you with half a release and no artifacts.
+#
+# `workflow_dispatch` runs the same pipeline against TestPyPI, which is how to
+# validate a change to this file without spending a real version number. PyPI
+# releases are effectively permanent: a version can be yanked but never
+# replaced, so the dry run is worth the two minutes.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish"
+        required: true
+        default: testpypi
+        type: choice
+        options: [testpypi, pypi]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Read the version the package declares
+        id: version
+        run: |
+          version=$(python -c "import re,pathlib; \
+            print(re.search(r'^version = \"([^\"]+)\"', \
+            pathlib.Path('pyproject.toml').read_text(), re.M).group(1))")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "pyproject declares $version"
+
+      # A tag that disagrees with the package version publishes something
+      # nobody asked for under a name nobody expects, and PyPI will not let
+      # you take it back. Refuse before anything is built.
+      - name: Refuse a tag that disagrees with the package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared="${{ steps.version.outputs.version }}"
+          if [ "$tag" != "$declared" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject version ${declared}." \
+                 "Retag, or fix the version, but do not publish a mismatch."
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches ${declared}"
+
+      # jupyddl exports __version__ as well, and a package whose metadata and
+      # runtime disagree is a support ticket waiting to happen.
+      - name: Refuse a package whose __version__ disagrees with its metadata
+        run: |
+          runtime=$(python -c "import re,pathlib; \
+            print(re.search(r'^__version__ = \"([^\"]+)\"', \
+            pathlib.Path('jupyddl/__init__.py').read_text(), re.M).group(1))")
+          declared="${{ steps.version.outputs.version }}"
+          if [ "$runtime" != "$declared" ]; then
+            echo "::error::jupyddl.__version__ is ${runtime} but pyproject says ${declared}"
+            exit 1
+          fi
+          echo "__version__ matches ${declared}"
+
+      - name: Build the sdist and the wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          twine check --strict dist/*
+
+      # The same smoke test the `build` workflow runs on every push, repeated
+      # here because this is the artefact that actually goes out.
+      - name: Install the wheel clean and plan with it
+        working-directory: /tmp
+        run: |
+          python -m venv /tmp/fresh
+          /tmp/fresh/bin/pip install "$GITHUB_WORKSPACE"/dist/*.whl
+          installed=$(/tmp/fresh/bin/python -c "import jupyddl; print(jupyddl.__version__)")
+          if [ "$installed" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::installed wheel reports $installed"
+            exit 1
+          fi
+          /tmp/fresh/bin/jupyddl generate gripper -n 3 --seed 1 -o /tmp/smoke
+          /tmp/fresh/bin/jupyddl solve \
+            /tmp/smoke/gripper-03-1/domain.pddl \
+            /tmp/smoke/gripper-03-1/problem.pddl \
+            -s astar -H lmcut | tee /tmp/plan.txt
+          grep -q "Valid: True" /tmp/plan.txt
+
+      - name: Extract this version's changelog section
+        run: |
+          python - <<'PY' > release-notes.md
+          import pathlib, re
+          version = "${{ steps.version.outputs.version }}"
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          # Everything between this version's heading and the next one.
+          match = re.search(
+              rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+              text, re.M | re.S,
+          )
+          print(match.group(1).strip() if match else
+                f"See CHANGELOG.md for what changed in {version}.")
+          PY
+          cat release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: |
+            dist/
+            release-notes.md
+
+  pypi:
+    name: publish to ${{ github.event.inputs.target || 'pypi' }}
+    needs: build
+    runs-on: ubuntu-latest
+    # The environment is what a PyPI trusted publisher is scoped to, and it is
+    # also where a required reviewer can be attached if you ever want a human
+    # to approve each publish.
+    environment:
+      name: ${{ github.event.inputs.target || 'pypi' }}
+      url: https://pypi.org/project/jupyddl/${{ needs.build.outputs.version }}
+    permissions:
+      id-token: write  # mint the OIDC token PyPI verifies; no secrets involved
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: >-
+            ${{ github.event.inputs.target == 'testpypi'
+                && 'https://test.pypi.org/legacy/' || '' }}
+          # A tag re-run after a partial failure should not fall over on the
+          # files that already made it.
+          skip-existing: true
+
+  github-release:
+    name: cut the GitHub release
+    needs: [build, pypi]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the release and attach the distributions
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: jupyddl ${{ needs.build.outputs.version }}
+          body_path: release-notes.md
+          files: dist/*
+          draft: false
+          prerelease: ${{ contains(needs.build.outputs.version, 'rc')
+                       || contains(needs.build.outputs.version, 'a')
+                       || contains(needs.build.outputs.version, 'b') }}
