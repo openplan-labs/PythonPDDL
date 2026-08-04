@@ -178,9 +178,20 @@ jobs:
     # Either a tag was pushed, or someone asked for a real release from the
     # Actions tab. A TestPyPI dry run deliberately creates neither tag nor
     # release -- it exists to rehearse, not to leave traces.
+    #
+    # Deliberately NOT gated on the publish succeeding. A GitHub Release
+    # records that a version was cut from a verified commit; PyPI is a
+    # downstream channel that can fail for reasons the code has nothing to do
+    # with -- auth not configured, an outage, a rate limit. Losing the tag and
+    # the release because of that would mean no record of the version and a
+    # full re-run to get one. `build` succeeding is the gate that matters:
+    # that is where every check lives. A failed publish stays red and visible,
+    # and re-running just that job finishes the job.
     if: >-
-      startsWith(github.ref, 'refs/tags/')
-      || github.event.inputs.target == 'pypi'
+      always()
+      && needs.build.result == 'success'
+      && (startsWith(github.ref, 'refs/tags/')
+          || github.event.inputs.target == 'pypi')
     runs-on: ubuntu-latest
     permissions:
       contents: write  # create the tag, the release, and attach the artifacts
