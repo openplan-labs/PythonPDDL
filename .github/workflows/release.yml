@@ -178,7 +178,7 @@ jobs:
           name: distributions
 
       - name: Create the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: jupyddl ${{ needs.build.outputs.version }}
           body_path: release-notes.md
