@@ -1,12 +1,26 @@
 # Releasing jupyddl
 
-Releases are cut by pushing a tag. `.github/workflows/release.yml` builds,
-verifies, publishes to PyPI and creates the GitHub Release from the changelog.
+`.github/workflows/release.yml` builds, verifies, publishes to PyPI and
+creates the GitHub Release from the changelog. There are two ways to start it.
+
+**From the Actions tab** — no local git, nothing depending on one person's
+laptop:
+
+> **Actions → release → Run workflow → target: `pypi`**
+
+That path creates the tag itself, at the commit it just built and tested, so
+the tag cannot end up pointing at something that was never verified.
+
+**Or by pushing a tag**, if you prefer:
 
 ```bash
 git tag -a v2.3.0 -m "jupyddl 2.3.0"
 git push origin v2.3.0
 ```
+
+Both run the same checks and produce the same artifacts. Choosing `testpypi`
+from the Actions tab rehearses everything and deliberately creates neither a
+tag nor a release.
 
 ## One-time setup on PyPI (a human has to do this)
 
@@ -55,7 +69,8 @@ number is spent either way. Two minutes on TestPyPI is cheap next to that.
 
 ## Cutting a release
 
-1. **Land everything on `main`** and confirm CI is green.
+1. **Land everything on `main`** and confirm CI is green. Steps 2-5 prepare the
+   commit; step 6 is either the Actions button above or a tag push.
 2. **Bump the version in two places** — they are checked against each other and
    against the tag, and a mismatch fails the build rather than publishing a
    surprise:
@@ -69,7 +84,8 @@ number is spent either way. Two minutes on TestPyPI is cheap next to that.
    python tools/build_web.py
    ```
 5. Commit, push, merge.
-6. **Tag the merge commit** and push the tag.
+6. **Cut it**: *Actions → release → Run workflow → `pypi`*, or tag the merge
+   commit and push the tag.
 
 ## What the workflow refuses to do
 
