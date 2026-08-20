@@ -7,7 +7,7 @@ name = "jupyddl"
 version = "2.3.0"
 description = "A pure-Python PDDL planning framework: parser, grounding, classical-to-SOTA planners, heuristics and benchmarking."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Erwin Lejeune" }]
 keywords = ["pddl", "planning", "heuristic-search", "a-star", "lm-cut", "automated-planning"]
@@ -20,7 +20,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
