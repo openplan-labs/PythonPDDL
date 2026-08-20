@@ -6,7 +6,7 @@
 classical-to-SOTA planners, heuristics, benchmarking — and a search you can
 actually *watch*. ✨
 
-**[▶ Open the workbench](https://apla-toolbox.github.io/PythonPDDL/)** ·
+**[▶ Open the workbench](https://openplan-labs.github.io/PythonPDDL/)** ·
 [Watch the 105-second tour](promo/jupyddl-promo.mp4)
 
 </div>
@@ -15,9 +15,9 @@ actually *watch*. ✨
 
 [![PyPI](https://img.shields.io/pypi/v/jupyddl.svg)](https://pypi.org/project/jupyddl/)
 [![Python versions](https://img.shields.io/pypi/pyversions/jupyddl.svg)](https://pypi.org/project/jupyddl/)
-![tests](https://github.com/APLA-Toolbox/PythonPDDL/workflows/tests/badge.svg?branch=main)
-![build](https://github.com/APLA-Toolbox/PythonPDDL/workflows/build/badge.svg?branch=main)
-[![GitHub license](https://img.shields.io/github/license/Apla-Toolbox/PythonPDDL.svg)](./LICENSE)
+![tests](https://github.com/openplan-labs/PythonPDDL/workflows/tests/badge.svg?branch=main)
+![build](https://github.com/openplan-labs/PythonPDDL/workflows/build/badge.svg?branch=main)
+[![GitHub license](https://img.shields.io/github/license/openplan-labs/PythonPDDL.svg)](./LICENSE)
 
 </div>
 
@@ -247,7 +247,7 @@ solve_task(task, "gbfs", "hff", observer=StallDetector())
 
 ## The browser workbench 🌐
 
-**[apla-toolbox.github.io/PythonPDDL](https://apla-toolbox.github.io/PythonPDDL/)**
+**[openplan-labs.github.io/PythonPDDL](https://openplan-labs.github.io/PythonPDDL/)**
 
 The workbench runs *this library*, unmodified, compiled to WebAssembly by
 [Pyodide](https://pyodide.org) — not a JavaScript re-implementation. Because the

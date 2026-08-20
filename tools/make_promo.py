@@ -1194,7 +1194,7 @@ def scene_cta(fig, t, data):
         fig,
         0.5,
         0.29,
-        "github.com/APLA-Toolbox/PythonPDDL",
+        "github.com/openplan-labs/PythonPDDL",
         size=23,
         color=INK,
         alpha=fade_in(t, 0.42, 0.16),

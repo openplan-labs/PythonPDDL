@@ -34,7 +34,7 @@ publisher with **exactly** these values:
 
 | Field | Value |
 |---|---|
-| Owner | `APLA-Toolbox` |
+| Owner | `openplan-labs` |
 | Repository name | `PythonPDDL` |
 | Workflow name | `release.yml` |
 | Environment name | `pypi` |

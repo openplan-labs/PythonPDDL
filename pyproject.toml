@@ -47,11 +47,11 @@ dev = ["pytest>=7", "pytest-cov>=4", "flake8>=6", "black>=23"]
 jupyddl = "jupyddl.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/APLA-Toolbox/PythonPDDL"
-Repository = "https://github.com/APLA-Toolbox/PythonPDDL"
-Changelog = "https://github.com/APLA-Toolbox/PythonPDDL/blob/main/CHANGELOG.md"
-Issues = "https://github.com/APLA-Toolbox/PythonPDDL/issues"
-Workbench = "https://apla-toolbox.github.io/PythonPDDL/"
+Homepage = "https://github.com/openplan-labs/PythonPDDL"
+Repository = "https://github.com/openplan-labs/PythonPDDL"
+Changelog = "https://github.com/openplan-labs/PythonPDDL/blob/main/CHANGELOG.md"
+Issues = "https://github.com/openplan-labs/PythonPDDL/issues"
+Workbench = "https://openplan-labs.github.io/PythonPDDL/"
 
 [tool.hatch.build.targets.wheel]
 packages = ["jupyddl"]
