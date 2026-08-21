@@ -39,13 +39,13 @@ is trivial to install, embed, teach with, and build on.
 
 </div>
 
-## Features 🌱
+## Features
 
 - 🧩 **Hand-written PDDL parser** and grounder covering **STRIPS, full ADL,
   derived predicates, numeric fluents, durative actions, trajectory
   constraints, preferences, timed initial literals and object fluents** — 20 of
   the 21 requirement flags, with the last one refused by name rather than
-  ignored. ([the full matrix](#pddl-support-))
+  ignored. ([the full matrix](#pddl-support))
 - 🔎 **14 planners**: BFS, DFS, Iterative Deepening, Dijkstra, Greedy Best-First,
   A*, Weighted A*, IDA*, Enforced Hill Climbing, hill climbing, beam search,
   Iterated Width, branch and bound, and anytime weighted A*.
@@ -55,7 +55,7 @@ is trivial to install, embed, teach with, and build on.
   against the number of nodes search expands rather than against `h*`. On
   blocksworld this beats `h_ff` by ~4× in expansions and ~15× on the clock, at
   instance sizes three times larger than it trained on.
-  ([how, and when it fails](#learned-heuristics-))
+  ([how, and when it fails](#learned-heuristics))
 - ⏱️ **Search budgets** on every planner: bound a run by nodes or by seconds and
   a truncated result says so, so "we stopped looking" never masquerades as
   "no plan exists".
@@ -73,7 +73,7 @@ is trivial to install, embed, teach with, and build on.
   simple registries; add your own in a few lines.
 - ✅ **Zero runtime dependencies** and a comprehensive test suite.
 
-## Install 💾
+## Install
 
 Requires Python ≥ 3.10, and nothing else:
 
@@ -101,7 +101,7 @@ the matplotlib charts; `learn` is only for speed — `jupyddl.learn` trains and
 evaluates on the standard library alone, NumPy just makes it one to two orders
 of magnitude faster.
 
-## Command line ⚔️
+## Command line
 
 ```bash
 # Solve a single instance
@@ -156,7 +156,7 @@ jupyddl · astar/lmcut · gripper-6  (28 facts, 52 ground actions)
   ✔ solved · cost 17 · 17 actions · 1.77s
 ```
 
-## Library usage 📑
+## Library usage
 
 ```python
 from jupyddl import solve, build_task, solve_task, trace_search, validate_plan
@@ -248,7 +248,7 @@ task = build_task("demos/gripper/domain.pddl", "demos/gripper/problem.pddl")
 solve_task(task, "gbfs", "hff", observer=StallDetector())
 ```
 
-## The browser workbench 🌐
+## The browser workbench
 
 **[openplan-labs.github.io/PythonPDDL](https://openplan-labs.github.io/PythonPDDL/)**
 
@@ -295,7 +295,7 @@ python -m http.server -d web 8000  # then open http://localhost:8000
 `web/dist` is committed so the page works from a plain clone; CI fails if it
 drifts out of step with the sources.
 
-## Generating instances 🎲
+## Generating instances
 
 A benchmark needs a difficulty ladder, and hand-writing one is tedious. The
 generators are seeded, so a published experiment can be reproduced exactly —
@@ -323,7 +323,7 @@ ladder = [write_instance("gripper", "instances/", size=n, seed=1)
 purely random operators are almost always unsolvable, which makes for a useless
 benchmark. The test suite grounds and solves everything each generator emits.
 
-## Learned heuristics 🧠
+## Learned heuristics
 
 Every solved instance is a labelled trajectory: the cost of a plan's suffix from
 any state on it is that state's cost-to-go. `jupyddl learn` turns a corpus of
@@ -377,7 +377,7 @@ jupyddl[learn]` adds NumPy purely for speed. A learned heuristic is **not
 admissible** — nothing in the objective bounds it from above — so pair it with
 `gbfs`, or `wastar` if you want a bounded-suboptimality knob.
 
-## Soft goals and trajectory constraints 🎯
+## Soft goals and trajectory constraints
 
 Preferences say what you would *rather* were true; constraints say what must
 hold along the whole trajectory. Both compile away before the search runs.
@@ -408,7 +408,7 @@ and `sometime-before` use monitor facts the planner sets when it can;
 effects, because a constraint the planner could satisfy by not looking would not
 be a constraint.
 
-## Benchmarking 📈
+## Benchmarking
 
 ```bash
 jupyddl benchmark demos --planners astar,gbfs,ehc,bfs --heuristic hff \
@@ -424,7 +424,7 @@ jupyddl benchmark demos --planners astar,gbfs,ehc,bfs --heuristic hff \
 
 </div>
 
-## Demo instances 🧪
+## Demo instances
 
 `demos/` holds thirteen instances chosen to stress different parts of the framework —
 and to make the difference between planners obvious:
@@ -477,7 +477,7 @@ plain A*, so its last plan is optimal if the run completes **and** the
 heuristic is admissible. `hc`, `beam` and `iw` trade completeness for speed, and `iw` needs
 no heuristic at all — it prunes by *novelty* instead.
 
-## PDDL support 🧾
+## PDDL support
 
 **20 of the 21 requirement flags are supported.**
 6 are modelled natively, 7 are compiled into the core
@@ -530,7 +530,7 @@ found. Fixing that properly needs a mutex-aware temporal scheduler
 (POPF-style), not another source-to-source compilation — it is the one gap here
 that is a project rather than a patch.
 
-## Architecture 🏗️
+## Architecture
 
 ```
 jupyddl/
@@ -572,7 +572,7 @@ one operator per disjunct. That is why the search only ever sees conjunctive
 preconditions, and why a domain full of `or` still runs through the same
 best-first engine as plain STRIPS.
 
-## Development 🛠️
+## Development
 
 ```bash
 git submodule update --init      # fetch the pddl-examples used by the tests
@@ -593,7 +593,7 @@ python tools/make_promo.py -o promo/jupyddl-promo.mp4 \
 Every number in the promo video is measured at render time by running the real
 planners — nothing in it is typed in by hand.
 
-## Cite 📰
+## Cite
 
 ```
 @misc{https://doi.org/10.13140/rg.2.2.22418.89282,
@@ -605,7 +605,7 @@ planners — nothing in it is typed in by hand.
 }
 ```
 
-## Maintainers Ⓜ️
+## Maintainers
 
 - Erwin Lejeune
 - Sampreet Sarkar
