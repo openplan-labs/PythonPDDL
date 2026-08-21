@@ -8,6 +8,11 @@ name: build
 
 on: [push]
 
+# Nothing here writes to the repository. Said explicitly so it stays true
+# even if the repository default is loosened again.
+permissions:
+  contents: read
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true

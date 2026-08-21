@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
 
+# This job pushes a commit back to main, so it needs write. It used to get it
+# by inheriting the repository default, which meant every other workflow here
+# inherited it too. Asking for it explicitly is what lets that default be
+# turned down to read-only.
+permissions:
+  contents: write
+
 concurrency:
   group: format-main
   cancel-in-progress: false
