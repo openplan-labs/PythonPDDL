@@ -9,6 +9,9 @@ actually *watch*. ✨
 **[▶ Open the workbench](https://openplan-labs.github.io/PythonPDDL/)** ·
 [Watch the 105-second tour](promo/jupyddl-promo.mp4)
 
+The repository is `PythonPDDL`; the package is `jupyddl`. That is what you
+install and what you import.
+
 </div>
 
 <div align="center">
@@ -72,7 +75,7 @@ is trivial to install, embed, teach with, and build on.
 
 ## Install 💾
 
-Requires Python ≥ 3.9, and nothing else:
+Requires Python ≥ 3.10, and nothing else:
 
 ```bash
 pip install jupyddl                 # the framework and the CLI
@@ -423,7 +426,7 @@ jupyddl benchmark demos --planners astar,gbfs,ehc,bfs --heuristic hff \
 
 ## Demo instances 🧪
 
-`demos/` holds six instances chosen to stress different parts of the framework —
+`demos/` holds thirteen instances chosen to stress different parts of the framework —
 and to make the difference between planners obvious:
 
 | Instance | What it exercises | Optimal cost |
@@ -442,8 +445,12 @@ and to make the difference between planners obvious:
 | `errands` | **preferences + constraints**: soft goals priced by a metric | 10 |
 | `timed-market` | **timed initial literals**: the plan waits for opening time | 4 |
 
-Most were produced by the generators, so `jupyddl generate` reproduces them
-exactly; `network` is hand-written because a recursive axiom is the point of it.
+Two of them are byte-for-byte generator output — `blocksworld12` is
+`generate blocksworld --size 12 --seed 3`, `workshop` is
+`generate workshop --size 3 --seed 1`. The rest were either hand-written
+(`sokoban`, `hanoi`, `elevator`, `errands`, `timed-market`, and `network`,
+whose recursive axiom is the point of it) or generated and then edited by hand,
+so `generate` will produce something equivalent but not identical.
 
 The `pddl-examples` git submodule supplies the smaller instances used by the
 parser and grounder tests.
@@ -459,10 +466,15 @@ parser and grounder tests.
 
 Heuristics: `blind`, `goalcount`, `hmax`, `hadd`, `hff`, `h1`, `h2`/`hm`, `lmcut`.
 
-`astar`, `idastar`, `bnb` and `dijkstra`/`bfs` are cost-optimal (the first three
-given an admissible heuristic — `blind`, `hmax`, `h1`/`h2`, `lmcut`). `awastar`
-lowers its weight until it reaches plain A*, so its last plan is optimal if the
-run completes. `hc`, `beam` and `iw` trade completeness for speed, and `iw` needs
+`astar`, `idastar` and `bnb` are cost-optimal given an **admissible** heuristic
+— `blind`, `hmax`, `h1`/`h2`, `lmcut`. `dijkstra` is cost-optimal
+unconditionally. `bfs` and `iddfs` minimise **plan length**, which is the same
+thing only when every action costs the same; on a domain with `:action-costs`
+they will happily return a shorter, more expensive plan. `bnb` also carries a
+default ceiling (200 000 expansions, depth 200), and a run that hits it is no
+longer a proof of optimality. `awastar` lowers its weight until it reaches
+plain A*, so its last plan is optimal if the run completes **and** the
+heuristic is admissible. `hc`, `beam` and `iw` trade completeness for speed, and `iw` needs
 no heuristic at all — it prunes by *novelty* instead.
 
 ## PDDL support 🧾
@@ -534,9 +546,13 @@ jupyddl/
   trace.py         search observers, events and serialisable traces
   live.py          zero-dependency live terminal dashboard
   generator.py     reproducible instance generators
+  learn/           heuristic learning: feature extraction, CEM, evaluation
+                   (the 'learn' extra; NumPy only makes it faster)
+  api.py           the library entry points -- solve, build_task, trace_search
   viz/             matplotlib theme, charts, animations (the 'viz' extra)
   benchmark.py     comparative benchmarking (CSV + plots)
-  cli.py           solve / benchmark / animate / demo / requirements / generate
+  cli.py           solve / benchmark / animate / demo / requirements /
+                   generate / learn
 web/               the Pyodide workbench
 tools/             web bundler and the promo-video renderer
 demos/             demo instances used by the docs, charts and video

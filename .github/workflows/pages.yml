@@ -19,8 +19,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Not called `build`: .mergify.yml keys a merge rule on a check named
-  # `build`, and that must mean the packaging workflow, not this one.
+  # Not called `build`: that name belongs to the packaging workflow, and two
+  # checks with one name is a reliable way to gate a merge on the wrong one.
+  # (Mergify used to key a rule on it; Mergify is gone, the reasoning is not.)
   bundle:
     runs-on: ubuntu-latest
     steps:

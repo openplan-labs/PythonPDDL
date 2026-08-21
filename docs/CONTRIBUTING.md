@@ -1,51 +1,64 @@
 # Contributing to PythonPDDL
-We love your input! We want to make contributing to this project as easy and transparent as possible, whether it's:
 
-- Reporting a bug
-- Discussing the current state of the code
-- Submitting a fix
-- Proposing new features
-- Becoming a maintainer
+Thanks for showing up.
 
-## We Develop with Github
-We use github to host code, to track issues and feature requests, as well as accept pull requests.
+This repository is `openplan-labs/PythonPDDL`; the package it publishes is
+called **`jupyddl`**, which is what you import and what you `pip install`.
 
-## We Use [Github Flow](https://guides.github.com/introduction/flow/index.html), So All Code Changes Happen Through Pull Requests
-Pull requests are the best way to propose changes to the codebase (we use [Github Flow](https://guides.github.com/introduction/flow/index.html)). We actively welcome your pull requests:
+The [org-wide contributing guide](https://github.com/openplan-labs/.github/blob/main/CONTRIBUTING.md)
+covers the PR flow, commit style, and what a useful bug report contains. This
+page covers only what is specific to this repository.
 
-1. Fork the repo and create your branch from `master`.
-2. If you've added code that should be tested, add tests.
-3. If you've changed APIs, update the documentation.
-4. Ensure the test suite passes.
-5. Make sure your code lints.
-6. Issue that pull request!
+## Setting up
 
-## Any contributions you make will be under the Apache 2.0 Software License
-In short, when you submit code changes, your submissions are understood to be under the same [Apache 2.0](https://choosealicense.com/licenses/apache-2.0/) that covers the project. Feel free to contact the maintainers if that's a concern.
+The `pddl-examples` submodule supplies the instances the tests and benchmarks
+read, so clone with it:
 
-## Report bugs using Github's [issues](https://github.com/briandk/transcriptase-atom/issues)
-We use GitHub issues to track public bugs. Report a bug by [opening a new issue](); it's that easy!
+```bash
+git clone --recurse-submodules https://github.com/openplan-labs/PythonPDDL
+```
 
-## Write bug reports with detail, background, and sample code
-[This is an example](http://stackoverflow.com/q/12488905/180626) of a bug report I wrote, and I think it's not a bad model. Here's [another example from Craig Hockenberry](http://www.openradar.me/11905408), an app developer whom I greatly respect.
+Python 3.10 is the floor; CI runs 3.10 through 3.14.
 
-**Great Bug Reports** tend to have:
+```bash
+uv venv
+uv pip install -e ".[dev,viz,learn]"
+```
 
-- A quick summary and/or background
-- Steps to reproduce
-  - Be specific!
-  - Give sample code if you can. [My stackoverflow question](http://stackoverflow.com/q/12488905/180626) includes sample code that *anyone* with a base R setup can run to reproduce what I was seeing
-- What you expected would happen
-- What actually happens
-- Notes (possibly including why you think this might be happening, or stuff you tried that didn't work)
+## What CI will run
 
-People *love* thorough bug reports. I'm not even kidding.
+```bash
+flake8 jupyddl tests tools --count --statistics
+pytest
+black .            # CI reformats main automatically, but reviewers read diffs
+```
 
-## Use a Consistent Coding Style
-We use black to format automatically your PR to master. Please ensure PEP8 and PEP20 are respected.
+The `learn` extra is optional at runtime and its NumPy path is not exercised by
+every CI job. If you touch `jupyddl/learn/`, run the suite with it installed.
 
-## License
-By contributing, you agree that your contributions will be licensed under its MIT License.
+## Filing a bug
 
-## References
-This document was adapted from the open-source contribution guidelines for [Facebook's Draft](https://github.com/facebook/draft-js/blob/a9316a723f9e918afde44dea68b5f9f39b7d9b00/CONTRIBUTING.md)
+A parser or planner bug needs its input. Attach the **domain and problem
+files**, say which **planner and heuristic** you ran (`astar` alone is
+ambiguous; `astar` with `lmcut` is not), and give the exact command.
+
+If you are reporting that something is slow, conditions are part of the report:
+machine, instance, and how you measured. A number without them is not a result.
+
+## Changing a guarantee
+
+`optimal`, `complete`, `admissible` and `anytime` are load-bearing words here —
+`OPTIMAL_PLANNERS` in [`jupyddl/search/__init__.py`](../jupyddl/search/__init__.py)
+is derived from an `optimal` attribute on each planner, and the workbench
+publishes it. If a change moves a planner in or out of that set, or narrows the
+assumption a guarantee holds under, say so in the PR description.
+
+New planners and heuristics should cite the paper they implement — name and
+year — in the docstring. It tells a later reader which variant they are
+getting.
+
+## Licence
+
+This project is licensed under **Apache 2.0** (see [`LICENSE`](../LICENSE)). By
+contributing, you agree that your contributions are licensed under the same
+terms.
