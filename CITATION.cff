@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+title: PythonPDDL
+message: >-
+  If you use PythonPDDL (the jupyddl package) in your work, please cite the
+  publication below.
+type: software
+authors:
+  - family-names: Lejeune
+    given-names: Erwin
+repository-code: "https://github.com/openplan-labs/PythonPDDL"
+url: "https://openplan-labs.github.io/PythonPDDL/"
+abstract: >-
+  A dependency-free, pure-Python PDDL planning framework: a parser and
+  grounder, classical through to state-of-the-art planners, heuristics, and a
+  benchmarking harness. Distributed on PyPI as jupyddl.
+license: Apache-2.0
+version: 2.4.0
+keywords:
+  - PDDL
+  - automated planning
+  - heuristic search
+  - artificial intelligence
+preferred-citation:
+  type: article
+  title: "Jupyddl, an extensible python library for PDDL planning and parsing"
+  authors:
+    - family-names: Lejeune
+      given-names: Erwin
+  year: 2021
+  doi: 10.13140/RG.2.2.22418.89282
+  url: "https://doi.org/10.13140/RG.2.2.22418.89282"
