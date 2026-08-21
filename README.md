@@ -2,9 +2,9 @@
 
 # jupyddl — Python PDDL
 
-✨ A dependency-free, pure-Python PDDL planning framework: parser, grounder,
+A dependency-free, pure-Python PDDL planning framework: parser, grounder,
 classical-to-SOTA planners, heuristics, benchmarking — and a search you can
-actually *watch*. ✨
+actually *watch*.
 
 **[▶ Open the workbench](https://openplan-labs.github.io/PythonPDDL/)** ·
 [Watch the 105-second tour](promo/jupyddl-promo.mp4)
