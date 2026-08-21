@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.0]
+
 ### Added
 - **A Research view in the workbench.** `jupyddl.learn` shipped in 2.3.0 with
   its results only in `.docs/` and a video, which meant the published site said
@@ -24,6 +26,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   committed bundle, the boot notice is a status bar rather than a splash
   screen, and only the controls that actually run a planner stay disabled until
   the interpreter arrives.
+
+### Changed
+- **Python 3.10 is the new floor**, and the matrix runs 3.10 through 3.14.
+  3.9 reached end of life in October 2025; `requires-python` moved to match
+  what is actually tested.
+- The `pddl-examples` submodule advances to a corpus that now grows on its own:
+  it imports fresh domains from planning.domains daily.
+- All URLs follow the organisation's rename to `openplan-labs`.
+
+### Removed
+- Mergify. Its auto-merge rule waited on an approving review that a
+  single-maintainer project does not produce, and its reviewer-assign rule
+  pinged an inactive account; every recent pull request was merged by hand.
 
 ## [2.3.0] - 2026-07-31
 
