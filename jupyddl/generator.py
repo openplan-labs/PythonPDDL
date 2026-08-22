@@ -164,7 +164,17 @@ GRIPPER_DOMAIN = """\
 
 
 def generate_gripper(size: int = 4, seed: int = 0, grippers: int = 2):
-    """``size`` balls to move from room A to room B. Plan length grows linearly."""
+    """``size`` balls to move from room A to room B. Plan length grows linearly.
+
+    Unlike every other generator here, ``seed`` does not vary the instance:
+    in gripper every ball starts in room A and must end in room B, so
+    ``size`` and ``grippers`` determine the problem completely. The seed
+    reaches only the problem name, which keeps generated files distinct.
+
+    The consequence is worth stating because it is easy to miss: a
+    train/test split that varies the seed and holds the size fixed produces
+    the *same instance* twice for this domain. Vary ``size`` instead.
+    """
     balls = _objects("ball", max(1, size))
     hands = _objects("gripper", max(1, grippers))
     init = ["(at-robby rooma)"]

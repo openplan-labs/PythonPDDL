@@ -344,13 +344,15 @@ seen, against greedy best-first search:
 
 | heuristic | coverage | expansions | seconds | plan cost |
 |---|---|---|---|---|
-| **`learned`** | 1.00 | **137** | **0.038** | **48.2** |
-| `hff` | 1.00 | 518 | 0.561 | 51.8 |
-| `goalcount` | 1.00 | 2483 | 0.169 | 51.0 |
+| **`learned`** | 1.00 | **137** | **0.036** | **48.2** |
+| `hff` | 1.00 | 518 | 0.534 | 51.8 |
+| `goalcount` | 1.00 | 2483 | 0.154 | 51.0 |
 
-Nearly four times fewer expansions than `hff` and fifteen times faster, because
-the network is a thousand multiply-adds and `hff` is a relaxed-plan extraction.
-Those are the numbers the command above prints, on one CPU, in about a minute.
+Nearly four times fewer expansions than `hff` and about fifteen times faster,
+because the network is a thousand multiply-adds and `hff` is a relaxed-plan
+extraction. These are read from `promo/rl-data.json`, the cache the published
+[Research view](https://openplan-labs.github.io/PythonPDDL/) renders from, so
+the page and this table cannot drift apart.
 
 It does not always win — on logistics it loses to `hff` by 6× and the reason is
 exact rather than mysterious: that domain has two predicates, so the feature
