@@ -6,6 +6,10 @@ import os
 
 import pytest
 
+# Plugin discovery off: a developer's installed plugins must not change what the
+# suite sees. tests/test_extending.py switches it back on where it tests it.
+os.environ["JUPYDDL_NO_PLUGINS"] = "1"
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLES = os.path.join(REPO_ROOT, "pddl-examples")
 

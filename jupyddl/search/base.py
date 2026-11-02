@@ -47,7 +47,10 @@ def best_first(
     """Generic best-first graph search.
 
     ``priority`` maps ``(g, h)`` to the open-list key; ``heuristic`` is an
-    optional callable ``state -> number`` (``inf`` marks a dead end).
+    optional callable ``state -> number`` (``inf`` marks a dead end). The key
+    may be a tuple to break ties -- ``lambda g, h: (g + h, h)`` is A* that
+    prefers the node nearer the goal among equal ``f`` -- in which case
+    observers are given its first element as ``f``.
     ``observer`` is an optional :class:`~jupyddl.trace.SearchObserver` that is
     notified as the search progresses (see :mod:`jupyddl.trace`).
     """
@@ -97,11 +100,14 @@ def best_first(
         state = node.state
         if observer is not None:
             hv_node = hcache.get(state, 0.0) if heuristic is not None else 0.0
+            f_node = priority(node.g, hv_node)
+            if isinstance(f_node, tuple):
+                f_node = f_node[0]
             observer.on_expand(
                 state,
                 g=node.g,
                 h=hv_node,
-                f=priority(node.g, hv_node),
+                f=f_node,
                 depth=node.depth,
                 open_size=len(open_list),
                 stats=stats,

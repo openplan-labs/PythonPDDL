@@ -139,6 +139,9 @@ jupyddl requirements --verbose
 # Generate a reproducible difficulty ladder
 jupyddl generate gripper --size 2 --count 8 --step 2 -o instances/
 
+# Planners, heuristics and generators added by installed packages
+jupyddl plugins
+
 # Bound any run by nodes or by seconds
 jupyddl solve demos/blocksworld12/domain.pddl demos/blocksworld12/problem.pddl \
     --search gbfs --heuristic hff --time-limit 10
@@ -573,6 +576,12 @@ and registering it in `jupyddl.search.PLANNERS`; a heuristic by subclassing
 `jupyddl.heuristics.HEURISTICS`; a generator by adding a function to
 `jupyddl.generator.GENERATORS`. All three are picked up by the CLI, the
 benchmark harness and the web workbench automatically.
+
+**[Extending jupyddl](.docs/EXTENDING.md)** walks through all three with worked
+examples — every one of them run by the test suite — and shows how to ship them
+as a **plugin**: declare `jupyddl.planners`, `jupyddl.heuristics` or
+`jupyddl.generators` entry points in your own package, and after a `pip install`
+the `jupyddl` command finds them by name. `jupyddl plugins` lists what it found.
 
 **Conditions are a formula tree in negation normal form.** The parser pushes
 every `not` down to the literals and rewrites `imply`; the grounder expands the

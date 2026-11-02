@@ -1,7 +1,7 @@
 """Command-line interface.
 
-``solve``, ``benchmark``, ``animate``, ``demo``, ``requirements``, ``generate``
-and ``learn``. Every long-running command accepts ``--max-expansions`` and
+``solve``, ``benchmark``, ``animate``, ``demo``, ``requirements``, ``generate``,
+``learn`` and ``plugins``. Every long-running command accepts ``--max-expansions`` and
 ``--time-limit``; when a search stops on one of those it says so rather than
 reporting the instance unsolvable.
 """
@@ -21,9 +21,14 @@ from .benchmark import (
     to_csv,
 )
 from .heuristics import HEURISTICS, LOADERS
-from .search import INFORMED_PLANNERS, PLANNERS
+from .plugins import describe_plugins, load_plugins
+from .search import PLANNERS
 
-INFORMED = set(INFORMED_PLANNERS)
+
+def _needs_heuristic(planner: str) -> bool:
+    # Read from the registry at call time rather than INFORMED_PLANNERS, which
+    # is fixed at import and so cannot know about a plugin's planners.
+    return bool(getattr(PLANNERS.get(planner), "requires_heuristic", False))
 
 
 def heuristic_spec(value: str) -> str:
@@ -265,7 +270,7 @@ def _cmd_benchmark(args) -> int:
     configs = []
     for planner in args.planners.split(","):
         planner = planner.strip()
-        configs.append((planner, args.heuristic if planner in INFORMED else None))
+        configs.append((planner, args.heuristic if _needs_heuristic(planner) else None))
 
     rows = run_benchmark(
         instances,
@@ -314,6 +319,25 @@ def _add_requirements(sub):
     p.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     p.add_argument("--verbose", action="store_true", help="include the full notes")
     p.set_defaults(func=_cmd_requirements)
+
+
+def _add_plugins(sub):
+    p = sub.add_parser(
+        "plugins",
+        help="list planners, heuristics and generators added by installed packages",
+    )
+    p.set_defaults(func=_cmd_plugins)
+
+
+def _cmd_plugins(args) -> int:
+    rows = describe_plugins()
+    if not rows:
+        print("No plugins installed. See .docs/EXTENDING.md to write one.")
+        return 0
+    for row in rows:
+        where = row["source"] or f"SKIPPED: {row['error']}"
+        print(f"{row['kind']:<10}{row['name']:<20}{where}")
+    return 0
 
 
 def _add_generate(sub):
@@ -645,6 +669,9 @@ def _print_summary(summary) -> None:
 
 
 def main(argv=None) -> int:
+    # Before the parser is built: ``--search`` and ``generate`` take their
+    # ``choices`` from the registries, which is where plugins land.
+    load_plugins()
     parser = argparse.ArgumentParser(
         prog="jupyddl",
         description="Pure-Python PDDL planning framework.",
@@ -657,6 +684,7 @@ def main(argv=None) -> int:
     _add_requirements(sub)
     _add_generate(sub)
     _add_learn(sub)
+    _add_plugins(sub)
     args = parser.parse_args(argv)
     return args.func(args)
 

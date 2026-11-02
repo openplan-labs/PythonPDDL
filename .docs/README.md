@@ -4,8 +4,10 @@ Everything that is not the README lives here: the research notes for the
 learning-for-planning line, the release runbook, and every image, video and
 measurement cache under [`assets/`](assets).
 
-These notes are research documents, not user documentation — the user-facing
-description of `jupyddl learn` is in the README and the module docstrings.
+Most of these notes are research documents, not user documentation — the
+user-facing description of `jupyddl learn` is in the README and the module
+docstrings. The exception is [EXTENDING.md](EXTENDING.md), the guide to building
+on the framework.
 
 The files GitHub reads for its own community features — `CONTRIBUTING.md`,
 `CODE_OF_CONDUCT.md`, `SECURITY.md` and the issue and pull-request templates —
@@ -14,6 +16,7 @@ are in `.github/` instead: GitHub only looks for them in the repository root,
 
 | Note | What it covers |
 |---|---|
+| [EXTENDING.md](EXTENDING.md) | How to add a heuristic, a planner and a generator, check their guarantees, and ship them as a plugin. Every example in it is run by the test suite |
 | [learned-heuristics.md](learned-heuristics.md) | The imitation stage: prior work, the design we chose, measured results on three domains, and an analysis of the one domain where it loses badly |
 | [rl-for-search.md](rl-for-search.md) | The reinforcement stage: the MDP that "minimise expansions" corresponds to, why the obvious policy gradient is hard here, and what we do instead |
 | [roadmap.md](roadmap.md) | What to build next, ordered by expected value, with the experiment that would settle each |

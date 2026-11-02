@@ -68,7 +68,7 @@ submitting**. This list is a working copy, not a substitute.
 | Automated tests | ✅ CI on Python 3.10–3.14, with and without the optional extras, plus a packaging check on the built wheel |
 | Community guidelines | ✅ [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md), [`CODE_OF_CONDUCT.md`](../.github/CODE_OF_CONDUCT.md), [`SECURITY.md`](../.github/SECURITY.md) |
 | API documentation | 🟡 Docstrings throughout, but no rendered API reference yet |
-| A guide to extending the framework | 🟡 A paragraph in the README's Architecture section; a full guide is in progress |
+| A guide to extending the framework | ✅ [EXTENDING.md](EXTENDING.md), executed by the test suite; third-party packages plug in through entry points |
 | Archived release with a DOI | ⏳ Waiting on the Zenodo setup above |
 | `paper.md` and `paper.bib` | ⏳ Not written yet. See the outline below |
 | Author list, with ORCIDs | ⏳ See [Authorship](#authorship) |
