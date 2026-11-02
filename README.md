@@ -30,6 +30,13 @@ language runtime. It has since been **rewritten from scratch as a pure-Python
 framework** — no Julia, no native dependencies, just the standard library — so it
 is trivial to install, embed, teach with, and build on.
 
+That is the point of it: a framework you can **build on** to implement a planning
+algorithm in readable Python, measure it against the ones already here, and
+**explain** it to someone else — every search can be traced, charted and
+replayed. We intend to publish jupyddl as peer-reviewed research software so that
+work built on it has something stable to cite; [the plan](.docs/PUBLISHING.md)
+says where and what is left.
+
 <div align="center">
 
 <picture>
@@ -596,6 +603,16 @@ Every number in the promo video is measured at render time by running the real
 planners — nothing in it is typed in by hand.
 
 ## Cite
+
+If jupyddl helps your work, please cite it. GitHub's **"Cite this repository"**
+button gives you APA and BibTeX from [`CITATION.cff`](CITATION.cff).
+
+The citation below is a 2021 preprint describing the project's original,
+Julia-backed version. A software paper on the current framework is planned for
+the [Journal of Open Source Software](https://joss.theoj.org), with a Zenodo
+DOI for every release; once it is accepted it replaces this entry. See
+[`.docs/PUBLISHING.md`](.docs/PUBLISHING.md) for the plan, the readiness
+checklist, and how contributors can be considered for authorship.
 
 ```
 @misc{https://doi.org/10.13140/rg.2.2.22418.89282,

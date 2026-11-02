@@ -6,7 +6,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The intent to publish, written down.** `.docs/PUBLISHING.md` says why and
+  where we mean to publish jupyddl as citable research software — a Zenodo DOI
+  per release, a JOSS paper, ICAPS workshops for the research results — with a
+  readiness checklist, the paper outline, the AI-usage disclosure JOSS requires
+  and how contributors can be considered for authorship. The README states the
+  project's aim (a framework to build on and to explain algorithms with) and
+  its Cite section says which version the 2021 preprint describes.
+- **Community files for outside contributors**: a security policy, a
+  pull-request template, a *Propose an algorithm* issue template, and an
+  "Adding an algorithm" section in `CONTRIBUTING.md`.
+
 ### Changed
+- **CI now runs on pull requests, including from forks.** `tests` and `build`
+  were `on: [push]`, which never fires for a fork, so an outside contributor's
+  PR showed no checks at all. They now run on every pull request and on pushes
+  to `main`.
 - **Documentation lives in one place: `.docs/`.** It was spread over three
   directories — `docs/` for the contributor files and the README charts,
   `promo/` for the videos and screenshots, `.docs/` for the research notes —

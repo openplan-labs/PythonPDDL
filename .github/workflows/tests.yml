@@ -1,6 +1,14 @@
 name: tests
 
-on: [push]
+on:
+  # Pull requests, including ones from forks: `push` alone never fires for a
+  # contributor's fork, so their PR would sit with no checks at all. Pushes to
+  # main still run so the badge reflects main. A branch pushed without a PR
+  # gets no CI; open a draft PR to get it.
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 # Nothing here writes to the repository. Said explicitly so it stays true
 # even if the repository default is loosened again.

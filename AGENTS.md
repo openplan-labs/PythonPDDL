@@ -8,7 +8,7 @@ Julia/`PDDL.jl`/PyCall integration has been removed — there is no Julia, no
 native build step, and the core has zero runtime dependencies.
 
 ### Environment
-- Python ≥ 3.9; a `.venv` (created with `uv`, Python 3.12) with an editable
+- Python ≥ 3.10; a `.venv` (created with `uv`, Python 3.12) with an editable
   install: `uv pip install -e ".[dev]"` (add `viz` for the matplotlib charts,
   animations and benchmark dashboards). `.venv`, `web/vendor/` and
   `pddl-examples/` contents are git-ignored.
@@ -27,7 +27,7 @@ native build step, and the core has zero runtime dependencies.
 
 ### What CI actually checks
 - **`tests`** — lint (`flake8 jupyddl tests tools`) and the suite on Python
-  3.9–3.14. Most of the matrix installs `.[dev]` *without* matplotlib, which is
+  3.10–3.14. Most of the matrix installs `.[dev]` *without* matplotlib, which is
   what nearly everyone installs and keeps the core honest about not importing
   it; one entry installs `.[dev,viz]` so `jupyddl/viz/` is executed rather than
   skipped. `tests/test_viz.py` and `tests/test_cli_viz.py` `importorskip`
@@ -51,8 +51,12 @@ native build step, and the core has zero runtime dependencies.
   **Bump the version in two places** — `pyproject.toml` and
   `jupyddl/__init__.py` — and rebuild `web/dist`, which carries it too.
 - **`pages`** — bundles, refuses to deploy a stale `web/dist`, then deploys.
-  Its job is called `bundle`, not `build`, because `.mergify.yml` keys a merge
-  rule on a check named `build` and that has to mean the packaging workflow.
+  Its job is called `bundle`, not `build`: a check named `build` has to mean
+  the packaging workflow, and two checks with one name is a reliable way to gate
+  a merge on the wrong one. (Mergify used to key a rule on it; it is retired.)
+- **Triggers.** `tests` and `build` run on pull requests, so a contributor's
+  fork gets CI, and on pushes to `main`. A branch pushed without a PR gets no
+  CI; open a draft PR.
 
 ### Layout beyond the core
 - `jupyddl/requirements.py` — **the source of truth** for what every PDDL

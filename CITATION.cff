@@ -20,6 +20,9 @@ keywords:
   - automated planning
   - heuristic search
   - artificial intelligence
+# This preprint describes the original, Julia-backed version. A software paper
+# on the current framework is planned for JOSS, with a Zenodo DOI per release;
+# when it is accepted it replaces this entry (see .docs/PUBLISHING.md).
 preferred-citation:
   type: article
   title: "Jupyddl, an extensible python library for PDDL planning and parsing"
