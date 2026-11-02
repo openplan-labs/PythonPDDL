@@ -7,10 +7,10 @@ measurement cache under [`assets/`](assets).
 These notes are research documents, not user documentation — the user-facing
 description of `jupyddl learn` is in the README and the module docstrings.
 
-The two files GitHub reads for its own community features,
-`CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`, are in `.github/` instead: GitHub
-only looks for them in the repository root, `.github/` or `docs/`, and would
-not find them here.
+The files GitHub reads for its own community features — `CONTRIBUTING.md`,
+`CODE_OF_CONDUCT.md`, `SECURITY.md` and the issue and pull-request templates —
+are in `.github/` instead: GitHub only looks for them in the repository root,
+`.github/` or `docs/`, and would not find them here.
 
 | Note | What it covers |
 |---|---|
@@ -18,6 +18,7 @@ not find them here.
 | [rl-for-search.md](rl-for-search.md) | The reinforcement stage: the MDP that "minimise expansions" corresponds to, why the obvious policy gradient is hard here, and what we do instead |
 | [roadmap.md](roadmap.md) | What to build next, ordered by expected value, with the experiment that would settle each |
 | [RELEASING.md](RELEASING.md) | How a release is cut, and the one-time PyPI trusted-publisher setup only a maintainer can do |
+| [PUBLISHING.md](PUBLISHING.md) | Our intent to publish jupyddl as citable research software: Zenodo, JOSS, ICAPS workshops, the readiness checklist and authorship |
 
 ## The one-paragraph version
 

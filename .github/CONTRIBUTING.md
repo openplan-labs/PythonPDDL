@@ -57,6 +57,32 @@ New planners and heuristics should cite the paper they implement — name and
 year — in the docstring. It tells a later reader which variant they are
 getting.
 
+## Adding an algorithm
+
+This is what the project is for. jupyddl aims to be the place where a planning
+algorithm is implemented readably, compared fairly and *explained*. A new
+planner, heuristic, compilation or generator is the most welcome contribution
+there is.
+
+1. Open an issue with the **Propose an algorithm** template first, so the
+   variant and its guarantees are agreed before you write code.
+2. Register it in the matching registry: `jupyddl.search.PLANNERS`,
+   `jupyddl.heuristics.HEURISTICS` or `jupyddl.generator.GENERATORS`. The CLI,
+   the benchmark harness and the browser workbench all read from these, so
+   registering it is all the wiring you need.
+3. Test the guarantee, not only that it runs. If you claim optimality, compare
+   the plan cost against `dijkstra` on small instances. If you claim
+   admissibility, check `h(s0)` against the optimal cost.
+4. Keep the core stdlib-only. Anything that needs a third-party package goes
+   behind an optional extra, the way `viz` and `learn` do.
+
+## Credit
+
+We intend to publish jupyddl as peer-reviewed research software (see
+[`.docs/PUBLISHING.md`](../.docs/PUBLISHING.md)). If you make a substantial
+contribution and want to be considered for authorship on the paper, say so in
+your pull request.
+
 ## Licence
 
 This project is licensed under **Apache 2.0** (see [`LICENSE`](../LICENSE)). By
