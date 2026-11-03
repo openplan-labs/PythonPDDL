@@ -36,6 +36,22 @@ black .            # CI reformats main automatically, but reviewers read diffs
 The `learn` extra is optional at runtime and its NumPy path is not exercised by
 every CI job. If you touch `jupyddl/learn/`, run the suite with it installed.
 
+## Pull request titles
+
+Pull requests are squash-merged, and the **title** becomes the commit that
+decides the next version, so it has to be a
+[Conventional Commit](https://www.conventionalcommits.org). The `pr-title`
+check enforces this:
+
+- `fix(lmcut): handle an empty goal` → patch release
+- `feat: add the GOOSE feature extractor` → minor release
+- `feat!: drop Python 3.10` → major release
+- `docs: …`, `test: …`, `chore: …`, `ci: …`, `refactor: …` → no release on their own
+
+Write the user-facing story under `## [Unreleased]` in `CHANGELOG.md` as
+well. The title is one line; the changelog entry is where you explain.
+[`.docs/RELEASING.md`](../.docs/RELEASING.md) covers the rest.
+
 ## Filing a bug
 
 A parser or planner bug needs its input. Attach the **domain and problem

@@ -42,14 +42,24 @@ native build step, and the core has zero runtime dependencies.
   rebuilds `web/dist` in the same commit; reformatting a bundled source and
   committing without the rebuild would leave main in a state where `pages`
   refuses to deploy.
-- **`release`** — fires on a `v*` tag. Builds, refuses a tag that disagrees
+- **`release-please`** — on every push to main, keeps one release PR that
+  bumps the version from the Conventional Commit titles merged since the last
+  release (`fix` patch, `feat` minor, `!`/`BREAKING CHANGE` major), files the
+  hand-written `[Unreleased]` notes under the new section and rebuilds
+  `web/dist` (`tools/release_pr_fixup.py`). Merging it tags the commit and
+  *dispatches* `release`: a tag made with the workflow token triggers nothing.
+  **PR titles must be Conventional Commits** (`pr-title` checks); squash-merge
+  with the PR title as the commit message. `__version__` carries an
+  `x-release-please-version` marker, and `.release-please-manifest.json` must
+  agree with it and `pyproject.toml` (`tests/test_release.py`).
+- **`release`** — fires on a `v*` tag, or is dispatched by `release-please`. Builds, refuses a tag that disagrees
   with `pyproject.toml` or a `__version__` that disagrees with either, runs
   `twine check --strict`, installs the wheel clean and plans with it, publishes
   to PyPI over OIDC (no stored token), then cuts the GitHub Release from the
   changelog section for that version. `.docs/RELEASING.md` is the runbook,
   including the one-time PyPI trusted-publisher setup only a maintainer can do.
-  **Bump the version in two places** — `pyproject.toml` and
-  `jupyddl/__init__.py` — and rebuild `web/dist`, which carries it too.
+  Do not bump versions by hand: release-please does it in both places (and the
+  manifest) and rebuilds `web/dist`, which carries it too.
 - **`pages`** — bundles, refuses to deploy a stale `web/dist`, then deploys.
   Its job is called `bundle`, not `build`: a check named `build` has to mean
   the packaging workflow, and two checks with one name is a reliable way to gate

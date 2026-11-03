@@ -1,3 +1,7 @@
+<!-- Title: a Conventional Commit — `fix(scope): …` (patch), `feat: …` (minor),
+`feat!: …` (major), or `docs:` / `test:` / `chore:` / `ci:` (no release). It
+becomes the squashed commit that decides the next version. -->
+
 ## What and why
 
 <!-- One or two sentences: what changes, and the problem it solves. Link the issue if there is one. -->
