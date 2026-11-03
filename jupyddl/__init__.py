@@ -29,7 +29,7 @@ from .trace import (
     TraceRecorder,
 )
 
-__version__ = "2.4.0"  # x-release-please-version
+__version__ = "2.4.0"
 
 __all__ = [
     "solve",

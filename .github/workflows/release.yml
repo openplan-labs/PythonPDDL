@@ -1,36 +1,38 @@
 name: release
 
-# Publish a release to PyPI and cut the GitHub Release to match.
+# Every merge to main can be a release, and nobody has to approve anything.
 #
-# Normally nobody starts this by hand: merging release-please's release PR
-# tags the commit and `release-please.yml` dispatches this workflow on that
-# tag (see the comment there for why it is a dispatch). The paths below still
-# work and run exactly the same checks.
+# On a push to main, `plan` looks up the pull request that was just merged and
+# picks the bump its commits ask for (tools/release.py, Conventional Commits):
 #
-# Push a tag and this does the rest:
+#     feat!: / fix!: / a "BREAKING CHANGE:" footer  -> major
+#     feat:                                          -> minor
+#     fix: / perf:                                   -> patch
+#     docs:, chore:, ci:, test:, refactor: ...       -> no release
 #
-#     git tag -a v2.3.0 -m "jupyddl 2.3.0" && git push origin v2.3.0
+# taking the largest over the PR title, every commit in it, and every commit
+# on main since the last tag (so a merge whose run was dropped as a duplicate
+# pending run still counts). A `release:major|minor|patch|none` label on the
+# PR overrides that.
 #
-# Authentication is PyPI **Trusted Publishing** (OIDC), so there is no API
-# token in this repository's secrets to leak or rotate. That requires a
-# one-time setup on PyPI — see `.docs/RELEASING.md`. Until it is done the
-# `pypi` job fails and everything before it still succeeds, so a tag never
-# leaves you with half a release and no artifacts.
+# `bump` then bumps pyproject.toml, jupyddl.__version__ and CITATION.cff,
+# dates the [Unreleased] changelog section, rebuilds web/dist (which records
+# the version), commits that to main and tags it -- with the workflow's own
+# token, which may push but may not open pull requests. That is the whole
+# trick: no release PR, so no "allow Actions to create pull requests" setting
+# and no approval. Its pushes start no workflows, so nothing loops; it starts
+# `pages` explicitly so the site shows the new version.
 #
-# A release can also be cut entirely from the Actions tab, without anyone
-# pushing a tag from a laptop:
+# The same build, checks and PyPI publish also run on a hand-pushed `v*` tag,
+# or from the Actions tab (target `testpypi` rehearses without tagging).
 #
-#     Actions -> release -> Run workflow -> target: pypi
-#
-# That path creates the tag itself, at the commit it built and tested, so the
-# tag can never point at something that was never verified. Choosing
-# `testpypi` instead runs the identical pipeline against TestPyPI and creates
-# no tag, which is how to validate a change to this file without spending a
-# real version number. PyPI releases are effectively permanent: a version can
-# be yanked but never replaced, so the dry run is worth the two minutes.
+# Authentication is PyPI **Trusted Publishing** (OIDC) for this file,
+# release.yml, in the `pypi` environment -- no stored token. See
+# `.docs/RELEASING.md` for the one-time PyPI setup.
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -41,22 +43,121 @@ on:
         type: choice
         options: [testpypi, pypi]
 
+# One release at a time, in merge order, never cancelled halfway.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: build and verify
+  plan:
+    name: decide what to release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      part: ${{ steps.plan.outputs.part }}
+      note: ${{ steps.plan.outputs.note }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          submodules: false
+          fetch-depth: 0  # the commits since the last tag count too
+
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '.[0] // empty')"
+          pr="${pr:-null}"
+          number="$(jq -r '.number // empty' <<<"$pr")"
+          commits='[]'
+          if [ -n "$number" ]; then
+            commits="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}/commits" --paginate \
+              --jq '[.[].commit.message]' | jq -s 'add // []')"
+          fi
+          jq -n --argjson pr "$pr" --argjson commits "$commits" --arg head "$HEAD_MESSAGE" \
+            '{labels: [($pr.labels // [])[].name],
+              messages: ([$head, ($pr.title // "")] + $commits)}' > pr.json
+          part="$(python3 tools/release.py plan --since-last-tag < pr.json)"
+          title="$(jq -r '.title // empty' <<<"$pr")"
+          note="${title}${number:+ (#${number})}"
+          echo "PR ${number:-none}: ${title:-$(head -n1 <<<"$HEAD_MESSAGE")} -> release: ${part}"
+          if [ "$part" != none ]; then echo "part=${part}" >> "$GITHUB_OUTPUT"; fi
+          {
+            echo "note<<__NOTE__"
+            echo "${note:-$(head -n1 <<<"$HEAD_MESSAGE")}"
+            echo "__NOTE__"
+          } >> "$GITHUB_OUTPUT"
+
+  bump:
+    name: bump, commit and tag
+    needs: plan
+    if: needs.plan.outputs.part != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # push the release commit and its tag to main
+      actions: write   # start `pages`: our own push starts no workflows
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          submodules: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.12'
+
+      - id: bump
+        env:
+          PART: ${{ needs.plan.outputs.part }}
+          NOTE: ${{ needs.plan.outputs.note }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(python tools/release.py apply "$PART" --note "$NOTE" | tail -n1)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "chore(release): ${version}"
+          git tag -a "v${version}" -m "jupyddl ${version}"
+          # Another push may have landed on main meanwhile (the format job);
+          # replay the release commit on top of it once rather than fail.
+          if ! git push origin HEAD:main; then
+            git fetch origin main
+            git rebase origin/main
+            git tag -f -a "v${version}" -m "jupyddl ${version}"
+            git push origin HEAD:main
+          fi
+          git push origin "v${version}"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main || \
+            echo "::warning::could not start pages; it will deploy on the next push"
+
+  build:
+    name: build and verify
+    needs: [plan, bump]
+    # A merge that asked for a release, a pushed tag, or a run from the tab.
+    if: >-
+      !cancelled()
+      && (needs.bump.result == 'success'
+          || startsWith(github.ref, 'refs/tags/')
+          || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.bump.outputs.tag || github.ref }}
           submodules: false
           fetch-depth: 0
 
@@ -66,12 +167,18 @@ jobs:
 
       - name: Read the version the package declares
         id: version
+        env:
+          BUMP_TAG: ${{ needs.bump.outputs.tag }}
         run: |
           version=$(python -c "import re,pathlib; \
             print(re.search(r'^version = \"([^\"]+)\"', \
             pathlib.Path('pyproject.toml').read_text(), re.M).group(1))")
+          tag="${BUMP_TAG}"
+          if [ -z "$tag" ] && [ "${GITHUB_REF_TYPE}" = tag ]; then tag="${GITHUB_REF_NAME}"; fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "pyproject declares $version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "pyproject declares $version${tag:+, releasing $tag}"
 
       # A dispatch from a branch creates the tag itself. If that version was
       # already released, PyPI would quietly skip the files (skip-existing)
@@ -85,7 +192,7 @@ jobs:
         run: |
           tag="v${{ steps.version.outputs.version }}"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "::error::$tag already exists. Bump the version (release-please does) before releasing again."
+            echo "::error::$tag already exists. Bump the version (merging a feat:/fix: PR does) before releasing again."
             exit 1
           fi
           echo "$tag is new"
@@ -94,16 +201,16 @@ jobs:
       # nobody asked for under a name nobody expects, and PyPI will not let
       # you take it back. Refuse before anything is built.
       - name: Refuse a tag that disagrees with the package version
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.version.outputs.tag != ''
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${{ steps.version.outputs.tag }}"
           declared="${{ steps.version.outputs.version }}"
-          if [ "$tag" != "$declared" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject version ${declared}." \
+          if [ "${tag#v}" != "$declared" ]; then
+            echo "::error::tag ${tag} does not match pyproject version ${declared}." \
                  "Retag, or fix the version, but do not publish a mismatch."
             exit 1
           fi
-          echo "tag ${GITHUB_REF_NAME} matches ${declared}"
+          echo "tag ${tag} matches ${declared}"
 
       # jupyddl exports __version__ as well, and a package whose metadata and
       # runtime disagree is a support ticket waiting to happen.
@@ -125,7 +232,7 @@ jobs:
           python -m build
           twine check --strict dist/*
 
-      # The same smoke test the `build` workflow runs on every push, repeated
+      # The same smoke test the `build` workflow runs on every PR, repeated
       # here because this is the artefact that actually goes out.
       - name: Install the wheel clean and plan with it
         working-directory: /tmp
@@ -171,9 +278,7 @@ jobs:
     name: publish to ${{ github.event.inputs.target || 'pypi' }}
     needs: build
     runs-on: ubuntu-latest
-    # The environment is what a PyPI trusted publisher is scoped to, and it is
-    # also where a required reviewer can be attached if you ever want a human
-    # to approve each publish.
+    # The environment is what a PyPI trusted publisher is scoped to.
     environment:
       name: ${{ github.event.inputs.target || 'pypi' }}
       url: https://pypi.org/project/jupyddl/${{ needs.build.outputs.version }}
@@ -190,33 +295,28 @@ jobs:
           repository-url: >-
             ${{ github.event.inputs.target == 'testpypi'
                 && 'https://test.pypi.org/legacy/' || '' }}
-          # A tag re-run after a partial failure should not fall over on the
+          # A re-run after a partial failure should not fall over on the
           # files that already made it.
           skip-existing: true
 
   github-release:
     name: cut the GitHub release
     needs: [build, pypi]
-    # Either a tag was pushed, or someone asked for a real release from the
-    # Actions tab. A TestPyPI dry run deliberately creates neither tag nor
-    # release -- it exists to rehearse, not to leave traces.
+    # A release commit, a pushed tag, or a real release from the Actions tab.
+    # A TestPyPI dry run deliberately creates neither tag nor release.
     #
-    # Deliberately NOT gated on the publish succeeding. A GitHub Release
-    # records that a version was cut from a verified commit; PyPI is a
-    # downstream channel that can fail for reasons the code has nothing to do
-    # with -- auth not configured, an outage, a rate limit. Losing the tag and
-    # the release because of that would mean no record of the version and a
-    # full re-run to get one. `build` succeeding is the gate that matters:
-    # that is where every check lives. A failed publish stays red and visible,
-    # and re-running just that job finishes the job.
+    # Deliberately NOT gated on the publish succeeding: the GitHub Release
+    # records that a version was cut from a verified commit, and `build` is
+    # where every check lives. A failed publish stays red and visible, and
+    # re-running just that job finishes the job.
     if: >-
       always()
       && needs.build.result == 'success'
-      && (startsWith(github.ref, 'refs/tags/')
+      && (needs.build.outputs.tag != ''
           || github.event.inputs.target == 'pypi')
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # create the tag, the release, and attach the artifacts
+      contents: write  # create the release (and, from the tab, the tag)
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -225,12 +325,8 @@ jobs:
       - name: Create the release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
-          # Named rather than inherited from the ref, so the dispatch path
-          # creates `v<version>` at this commit. The release API creates the
-          # tag when it does not exist, and the build job has already refused
-          # to get here if the version were inconsistent anywhere.
           tag_name: v${{ needs.build.outputs.version }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ needs.build.outputs.sha }}
           name: jupyddl ${{ needs.build.outputs.version }}
           body_path: release-notes.md
           files: dist/*
