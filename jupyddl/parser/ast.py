@@ -163,9 +163,13 @@ class DelEffect:
 
 @dataclass
 class IncreaseCostEffect:
-    """``(increase (total-cost) k)`` — the classical action-cost shorthand."""
+    """``(increase (total-cost) k)`` — the classical action-cost shorthand.
 
-    amount: float
+    ``amount`` is a float, or a numeric expression over *static* functions such
+    as ``(road-length ?from ?to)``, which the grounder evaluates from ``:init``.
+    """
+
+    amount: object
 
 
 @dataclass
@@ -198,6 +202,19 @@ class WhenEffect:
     body: object
 
 
+@dataclass
+class TimedEffect:
+    """A durative action's effects, split by when they happen.
+
+    ``start`` applies first and ``end`` after it, so an at-end effect overrides
+    a conflicting at-start one. The grounder folds the two into one operator;
+    see :mod:`jupyddl.requirements` for exactly how.
+    """
+
+    start: object
+    end: object
+
+
 # --- domain / problem --------------------------------------------------------
 
 
@@ -223,7 +240,11 @@ class Action:
     effect: object  # one of the *Effect nodes above
     # Set when the action came from a (:durative-action ...) block; the value is
     # its duration, and the compilation is documented in jupyddl.requirements.
+    # ``precondition`` then holds the at-start conditions, ``effect`` a
+    # TimedEffect, and ``late_condition`` the over-all and at-end conditions,
+    # which are read in the state *after* the at-start effects.
     duration: object = None
+    late_condition: object = None
 
 
 @dataclass
@@ -284,6 +305,9 @@ class Preference:
 
     name: str
     body: object
+    # ((var, type), ...) when the preference sat under a ``forall``: it then
+    # stands for one preference per binding, all sharing the name.
+    params: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -292,11 +316,15 @@ class Constraint:
 
     ``kind`` is the PDDL modal operator (``always``, ``sometime``, ``at-end``,
     ``at-most-once``, ``sometime-before``, ``sometime-after``) and ``args`` holds
-    its operand formulas, already in negation normal form.
+    its operand formulas, already in negation normal form. ``params`` holds the
+    variables of any enclosing ``forall``: the constraint stands for one copy
+    per binding, which is not the same as quantifying inside it —
+    ``(forall (?x) (sometime (p ?x)))`` lets each ``?x`` have its own moment.
     """
 
     kind: str
     args: tuple = ()
+    params: tuple = ()
 
 
 @dataclass(frozen=True)

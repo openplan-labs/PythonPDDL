@@ -62,7 +62,7 @@ submitting**. This list is a working copy, not a substitute.
 |---|---|
 | OSI-approved licence | ✅ Apache-2.0 |
 | Public repository, open issue tracker, history in the open | ✅ |
-| Substantial scholarly effort | ✅ Parser and grounder covering 20 of 21 PDDL requirement flags, 14 planners, LM-cut and `h^m`, PDDL 3 compiled to the classical core, learned heuristics, search tracing |
+| Substantial scholarly effort | ✅ Parser and grounder covering 20 of 24 PDDL requirement flags, 14 planners, LM-cut and `h^m`, PDDL 3 compiled to the classical core, learned heuristics, search tracing |
 | Installation instructions | ✅ README → Install; `pip install jupyddl` |
 | Example usage | ✅ README, `demos/`, the browser workbench |
 | Automated tests | ✅ CI on Python 3.10–3.14, with and without the optional extras, plus a packaging check on the built wheel |

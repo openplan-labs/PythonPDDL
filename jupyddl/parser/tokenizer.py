@@ -10,36 +10,40 @@ from __future__ import annotations
 from .ast import PDDLError
 
 
-def _strip_comments(text: str) -> str:
-    out = []
-    for line in text.splitlines():
-        idx = line.find(";")
-        out.append(line if idx == -1 else line[:idx])
-    return "\n".join(out)
-
-
 def tokenize(text: str) -> list:
-    """Parse PDDL source into a nested list of lower-cased string tokens."""
-    text = _strip_comments(text)
-    # Pad parens so a simple split yields clean tokens.
-    text = text.replace("(", " ( ").replace(")", " ) ")
-    tokens = text.split()
+    """Parse PDDL source into a nested list of lower-cased string tokens.
 
+    An unbalanced parenthesis is reported with the line it is on (for a missing
+    ``)``, the line of the ``(`` that was never closed).
+    """
     stack: list[list] = [[]]
-    for tok in tokens:
-        if tok == "(":
-            new: list = []
-            stack[-1].append(new)
-            stack.append(new)
-        elif tok == ")":
-            if len(stack) == 1:
-                raise PDDLError("Unbalanced parentheses: unexpected ')'")
-            stack.pop()
-        else:
-            stack[-1].append(tok.lower())
+    opened_on: list[int] = []  # line of each '(' still open
+    for number, line in enumerate(text.splitlines(), start=1):
+        comment = line.find(";")
+        if comment != -1:
+            line = line[:comment]
+        # Pad parens so a simple split yields clean tokens.
+        for tok in line.replace("(", " ( ").replace(")", " ) ").split():
+            if tok == "(":
+                new: list = []
+                stack[-1].append(new)
+                stack.append(new)
+                opened_on.append(number)
+            elif tok == ")":
+                if len(stack) == 1:
+                    raise PDDLError(
+                        f"Unbalanced parentheses: unexpected ')' on line {number}"
+                    )
+                stack.pop()
+                opened_on.pop()
+            else:
+                stack[-1].append(tok.lower())
 
     if len(stack) != 1:
-        raise PDDLError("Unbalanced parentheses: missing ')'")
+        raise PDDLError(
+            "Unbalanced parentheses: missing ')' for the '(' opened on line "
+            f"{opened_on[-1]}"
+        )
     top = stack[0]
     if len(top) != 1 or not isinstance(top[0], list):
         raise PDDLError("Expected a single top-level s-expression")
