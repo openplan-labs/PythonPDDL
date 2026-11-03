@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections import deque
 
-from .base import Planner
+from .base import BudgetExhausted, Planner
 from .node import extract_plan, make_child, make_root
 from .result import SearchResult, SearchStats
 
@@ -14,7 +14,9 @@ class BreadthFirstSearch(Planner):
     """FIFO breadth-first graph search. Optimal in number of actions."""
 
     name = "bfs"
-    optimal = True  # for unit-cost / plan-length
+    # Shortest in *plan length*, which is cost-optimal only when every action
+    # costs the same. OPTIMAL_PLANNERS means cost-optimal, so not here.
+    optimal = False
 
     def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
         stats = SearchStats()
@@ -141,10 +143,15 @@ class DepthFirstSearch(Planner):
 
 
 class IterativeDeepeningSearch(Planner):
-    """Iterative-deepening DFS. Optimal in plan length with low memory."""
+    """Iterative-deepening DFS. Shortest in plan length, with low memory.
+
+    Not cost-optimal under action costs, like ``bfs``. Stopping at
+    ``max_depth`` with branches still cut off sets ``stats.truncated``: no plan
+    within that depth is not a proof that none exists.
+    """
 
     name = "iddfs"
-    optimal = True
+    optimal = False
 
     def __init__(self, max_depth: int = 1000):
         self.max_depth = max_depth
@@ -158,9 +165,22 @@ class IterativeDeepeningSearch(Planner):
         for limit in range(self.max_depth + 1):
             if observer is not None:
                 observer.on_bound(float(limit), limit, stats)
-            found, cutoff = self._dls(
-                task, make_root(start_state), limit, stats, {start_state}, observer
-            )
+            try:
+                found, cutoff = self._dls(
+                    task,
+                    make_root(start_state),
+                    limit,
+                    stats,
+                    {start_state},
+                    observer,
+                    budget,
+                )
+            except BudgetExhausted:
+                break
+            except RecursionError:
+                # Deeper than Python's stack allows: we stopped looking.
+                stats.truncated = True
+                break
             if found is not None:
                 stats.runtime = time.perf_counter() - start
                 result = SearchResult(True, extract_plan(found), found.g, stats)
@@ -170,17 +190,21 @@ class IterativeDeepeningSearch(Planner):
                 return result
             if not cutoff:  # search exhausted without hitting the depth limit
                 break
+        else:
+            stats.truncated = True  # max_depth ran out with branches still cut
         stats.runtime = time.perf_counter() - start
         result = SearchResult(False, None, None, stats)
         if observer is not None:
             observer.on_finish(result)
         return result
 
-    def _dls(self, task, node, limit, stats, on_path, observer=None):
+    def _dls(self, task, node, limit, stats, on_path, observer=None, budget=None):
         if task.goal_reached(node.state):
             return node, False
         if node.depth == limit:
             return None, True
+        if budget is not None and budget.exceeded(stats):
+            raise BudgetExhausted
         stats.expanded += 1
         if observer is not None:
             observer.on_expand(
@@ -201,7 +225,7 @@ class IterativeDeepeningSearch(Planner):
                 continue
             child = make_child(node, op, succ, op.cost)
             on_path.add(succ)
-            found, cut = self._dls(task, child, limit, stats, on_path, observer)
+            found, cut = self._dls(task, child, limit, stats, on_path, observer, budget)
             on_path.discard(succ)
             if found is not None:
                 return found, False

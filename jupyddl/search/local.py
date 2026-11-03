@@ -35,6 +35,7 @@ class HillClimbing(Planner):
         self.seed = seed
 
     def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
+        self._require(heuristic)
         stats = SearchStats()
         started = time.perf_counter()
         if observer is not None:
@@ -132,6 +133,7 @@ class BeamSearch(Planner):
         self.width = max(1, int(width))
 
     def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
+        self._require(heuristic)
         stats = SearchStats()
         started = time.perf_counter()
         if observer is not None:
@@ -150,11 +152,13 @@ class BeamSearch(Planner):
         seen = {start}
         depth = 0
         while layer:
-            if budget is not None and budget.exceeded(stats):
-                break
             depth += 1
             scored = []
             for node in layer:
+                # Polled per node, not per layer: a layer is up to `width`
+                # expansions with a heuristic call per successor.
+                if budget is not None and budget.exceeded(stats):
+                    break
                 stats.expanded += 1
                 if observer is not None:
                     observer.on_expand(
@@ -187,6 +191,8 @@ class BeamSearch(Planner):
                         continue
                     scored.append((value, child))
 
+            if stats.truncated:
+                break
             scored.sort(key=lambda entry: entry[0])
             layer = [child for _, child in scored[: self.width]]
             if observer is not None and layer:

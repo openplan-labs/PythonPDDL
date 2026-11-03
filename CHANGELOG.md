@@ -92,6 +92,24 @@ plans because it replays them through the same model. They are now pinned by
   so LM-cut broke ties differently in every process: gripper with `astar`/`lmcut`
   expanded 1725, 1758 or 1760 nodes and returned different plans. Ids are now
   assigned in sorted order, so a benchmark reproduces.
+- **`iddfs`, `idastar` and `ehc` ignored their budget**, so `--time-limit 0.5`
+  on blocksworld12 ran for minutes. `beam` polled once per layer and `bnb` kept
+  evaluating LM-cut on every sibling after the budget fired; both now stop at
+  once. A new contract test runs every planner where the budget is the only
+  thing that stops it.
+- **A depth cap was reported as "no plan exists"** (`iddfs`, `bnb`), and a
+  `bnb` plan found under one as optimal. Hitting the cap now sets `truncated`,
+  as does a search deeper than Python's recursion limit.
+- **`bfs` and `iddfs` were listed as optimal.** They minimise plan *length*;
+  on errands they return cost 16 where 10 is optimal. They are no longer in
+  `OPTIMAL_PLANNERS`, and the workbench no longer badges them.
+- **The live dashboard** said "no plan found" when the budget stopped the
+  search, smeared every repaint on a narrow terminal (lines were never clipped
+  to its width), and logged ten times too often when not on a terminal.
+- `idastar`, `ehc`, `hc` and `beam` without a heuristic raise a clear
+  `ValueError` instead of a `TypeError` from deep inside the search;
+  `MultiObserver` accepts positional arguments like the base class; the
+  `SearchObserver` docstring no longer claims hooks are called defensively.
 
 ## [2.4.0]
 

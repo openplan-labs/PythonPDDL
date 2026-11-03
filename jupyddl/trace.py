@@ -114,9 +114,9 @@ class SearchEvent:
 class SearchObserver:
     """Base class for search observers — every hook defaults to a no-op.
 
-    Subclass and override only what you care about. Planners call the hooks
-    defensively, so an observer that raises will not corrupt a search: it is the
-    observer's job to stay cheap and total.
+    Subclass and override only what you care about. Hooks are called inline,
+    on the search's own thread: an observer that raises aborts the search, and
+    a slow one slows it down. Keep them cheap and total.
     """
 
     def on_start(self, task, planner: str, heuristic: str = "") -> None:
@@ -168,13 +168,13 @@ class MultiObserver(SearchObserver):
         for obs in self.observers:
             obs.on_start(task, planner, heuristic)
 
-    def on_expand(self, state, **kwargs) -> None:
+    def on_expand(self, state, *args, **kwargs) -> None:
         for obs in self.observers:
-            obs.on_expand(state, **kwargs)
+            obs.on_expand(state, *args, **kwargs)
 
-    def on_generate(self, state, **kwargs) -> None:
+    def on_generate(self, state, *args, **kwargs) -> None:
         for obs in self.observers:
-            obs.on_generate(state, **kwargs)
+            obs.on_generate(state, *args, **kwargs)
 
     def on_bound(self, threshold: float, iteration: int, stats=None) -> None:
         for obs in self.observers:

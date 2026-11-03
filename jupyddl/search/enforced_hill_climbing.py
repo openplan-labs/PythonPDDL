@@ -22,6 +22,7 @@ class EnforcedHillClimbing(Planner):
     requires_heuristic = True
 
     def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
+        self._require(heuristic)
         stats = SearchStats()
         start = time.perf_counter()
         if observer is not None:
@@ -39,9 +40,11 @@ class EnforcedHillClimbing(Planner):
                 observer.on_bound(float(current_h), plateau, stats)
             plateau += 1
             state, ops, path_cost, new_h = self._probe(
-                task, current, current_h, heuristic, stats, observer
+                task, current, current_h, heuristic, stats, observer, budget
             )
-            if state is None:  # no strictly-improving state reachable
+            # No strictly-improving state reachable -- or the budget ran out,
+            # in which case stats.truncated says so.
+            if state is None:
                 stats.runtime = time.perf_counter() - start
                 result = SearchResult(False, None, None, stats)
                 if observer is not None:
@@ -58,11 +61,15 @@ class EnforcedHillClimbing(Planner):
             observer.on_finish(result)
         return result
 
-    def _probe(self, task, start, target_h, heuristic, stats, observer=None):
+    def _probe(
+        self, task, start, target_h, heuristic, stats, observer=None, budget=None
+    ):
         """BFS from ``start`` for a state with ``h < target_h`` (or the goal)."""
         visited = {start}
         queue = deque([(start, [], 0)])
         while queue:
+            if budget is not None and budget.exceeded(stats):
+                break
             state, ops, cost = queue.popleft()
             stats.expanded += 1
             if observer is not None:
