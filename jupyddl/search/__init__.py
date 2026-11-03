@@ -51,13 +51,19 @@ INFORMED_PLANNERS = tuple(
 
 
 def make_planner(name: str, **kwargs) -> Planner:
-    """Instantiate a planner by name (see :data:`PLANNERS`)."""
-    try:
-        factory = PLANNERS[name]
-    except KeyError:
-        raise ValueError(
-            f"Unknown planner '{name}'. Available: {sorted(PLANNERS)}"
-        ) from None
+    """Instantiate a planner by name (see :data:`PLANNERS`).
+
+    A name that is not registered triggers plugin discovery once (see
+    :mod:`jupyddl.plugins`) before it is reported as unknown.
+    """
+    factory = PLANNERS.get(name)
+    if factory is None:
+        from ..plugins import load_plugins
+
+        load_plugins()
+        factory = PLANNERS.get(name)
+    if factory is None:
+        raise ValueError(f"Unknown planner '{name}'. Available: {sorted(PLANNERS)}")
     return factory(**kwargs)
 
 

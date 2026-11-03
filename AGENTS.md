@@ -53,7 +53,7 @@ native build step, and the core has zero runtime dependencies.
 - **`pages`** — bundles, refuses to deploy a stale `web/dist`, then deploys.
   Its job is called `bundle`, not `build`: a check named `build` has to mean
   the packaging workflow, and two checks with one name is a reliable way to gate
-  a merge on the wrong one. (Mergify used to key a rule on it; it is retired.)
+  a merge on the wrong one. (The repository's Mergify rules used to key on it.)
 - **Triggers.** `tests` and `build` run on pull requests, so a contributor's
   fork gets CI, and on pushes to `main`. A branch pushed without a PR gets no
   CI; open a draft PR.
@@ -206,4 +206,11 @@ planners must go through the task rather than the operator to honour them:
 - Extend via the registries: `jupyddl.search.PLANNERS`,
   `jupyddl.heuristics.HEURISTICS` and `jupyddl.generator.GENERATORS`. The CLI,
   benchmark harness and web workbench all read from them, so a new entry shows
-  up everywhere for free.
+  up everywhere for free. Other packages reach the same registries through
+  entry points (`jupyddl/plugins.py`). Discovery is **lazy** — the CLI runs it
+  before building its parser, the library only on a lookup miss — so importing
+  jupyddl never scans installed packages, and `INFORMED_PLANNERS` /
+  `OPTIMAL_PLANNERS` describe the built-ins only. The suite sets
+  `JUPYDDL_NO_PLUGINS=1` so a developer's installed plugins cannot change it.
+- **`.docs/EXTENDING.md` is executed** by `tests/test_extending.py`: change an
+  API it uses and that test fails until the guide is updated too.

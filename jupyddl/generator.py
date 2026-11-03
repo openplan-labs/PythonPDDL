@@ -613,20 +613,30 @@ GENERATOR_NOTES = {
 
 
 def generate(kind: str, size: int = 4, seed: int = 0, **kwargs):
-    """Generate ``(domain_text, problem_text)`` for a named generator."""
-    try:
-        factory = GENERATORS[kind]
-    except KeyError:
-        raise ValueError(
-            f"Unknown generator '{kind}'. Available: {sorted(GENERATORS)}"
-        ) from None
+    """Generate ``(domain_text, problem_text)`` for a named generator.
+
+    An unregistered ``kind`` triggers plugin discovery once (see
+    :mod:`jupyddl.plugins`) before it is reported as unknown.
+    """
+    factory = GENERATORS.get(kind)
+    if factory is None:
+        from .plugins import load_plugins
+
+        load_plugins()
+        factory = GENERATORS.get(kind)
+    if factory is None:
+        raise ValueError(f"Unknown generator '{kind}'. Available: {sorted(GENERATORS)}")
     return factory(size=size, seed=seed, **kwargs)
 
 
 def describe_generators() -> list:
     """Serialisable metadata for the CLI and the web workbench."""
     return [
-        {"name": name, "summary": GENERATOR_NOTES.get(name, "")}
+        {
+            "name": name,
+            "summary": GENERATOR_NOTES.get(name)
+            or (GENERATORS[name].__doc__ or "").strip().split("\n")[0],
+        }
         for name in sorted(GENERATORS)
     ]
 

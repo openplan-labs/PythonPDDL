@@ -14,6 +14,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and how contributors can be considered for authorship. The README states the
   project's aim (a framework to build on and to explain algorithms with) and
   its Cite section says which version the 2021 preprint describes.
+- **Plugins.** A package can now add planners, heuristics and generators by
+  declaring `jupyddl.planners`, `jupyddl.heuristics` or `jupyddl.generators`
+  entry points; once it is installed, `jupyddl solve -s <its planner>` works
+  without anyone importing it. Discovery is lazy (the CLI runs it before
+  building its parser, the library only when asked for a name it does not
+  know), a built-in name always wins, a plugin that fails to import is skipped
+  with a warning, and `JUPYDDL_NO_PLUGINS=1` turns it off. `jupyddl plugins`
+  lists what was found.
+- **`.docs/EXTENDING.md`, a guide to building on the framework**: a heuristic,
+  a planner from a priority function, a planner from scratch with the full
+  budget/observer contract, a generator, how to test the guarantees you claim,
+  and how to ship it all as a plugin. Every example runs in the test suite, so
+  the guide cannot drift from the API.
+- `best_first` accepts a **tuple priority** for tie-breaking
+  (`lambda g, h: (g + h, h)`); observers are given its first element as `f`.
 - **Community files for outside contributors**: a security policy, a
   pull-request template, a *Propose an algorithm* issue template, and an
   "Adding an algorithm" section in `CONTRIBUTING.md`.

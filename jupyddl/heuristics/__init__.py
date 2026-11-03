@@ -47,6 +47,8 @@ def make_heuristic(name, task) -> Heuristic:
     Accepts a registry name (``"lmcut"``), a parameterised spec
     (``"learned:model.json"``), or an already-built heuristic, which is passed
     through so callers holding a trained model need not round-trip it to disk.
+    An unregistered name triggers plugin discovery once (see
+    :mod:`jupyddl.plugins`) before it is reported as unknown.
     """
     if callable(name) and not isinstance(name, str):
         return name
@@ -59,13 +61,17 @@ def make_heuristic(name, task) -> Heuristic:
                 f"Available: {sorted(LOADERS)}"
             )
         return loader(argument, task)
-    try:
-        factory = HEURISTICS[name]
-    except KeyError:
+    factory = HEURISTICS.get(name)
+    if factory is None:
+        from ..plugins import load_plugins
+
+        load_plugins()
+        factory = HEURISTICS.get(name)
+    if factory is None:
         raise ValueError(
             f"Unknown heuristic '{name}'. Available: {sorted(HEURISTICS)}"
             + (f" (or {sorted(LOADERS)} with an argument)" if LOADERS else "")
-        ) from None
+        )
     return factory(task)
 
 
