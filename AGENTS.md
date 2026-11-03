@@ -134,6 +134,20 @@ traps worth knowing:
   the planner would simply decline to notice. Those ride on conditional effects
   added to every domain action.
 
+- **Durative actions are one sequential action** with three time points:
+  at-start conditions in the starting state, then at-start effects, then
+  over-all/at-end conditions (and `always`) checked in that in-between state,
+  then at-end effects, which win any conflict (`grounding._sequence`). What
+  cannot be expressed that way is refused by name, not approximated.
+- **The cost model.** No metric: every action costs 1 (or its declared
+  `total-cost` increase). A metric over `(total-cost)`: declared increases,
+  0 otherwise; increases may read *static* functions (`road-length`), which
+  are evaluated at grounding. A metric without `total-cost`: domain actions
+  are free and only preference penalties count. `(total-time)`: an action
+  costs its duration. `maximize` and other metric shapes are refused.
+- `compile_problem` deep-copies its inputs: `ground()` must never mutate a
+  parsed Domain/Problem, which callers may reuse for another problem.
+
 ### Optional task layers
 `Task` carries three layers that are inert unless the domain uses them, and the
 planners must go through the task rather than the operator to honour them:

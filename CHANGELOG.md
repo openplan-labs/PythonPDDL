@@ -196,6 +196,58 @@ plans because it replays them through the same model. They are now pinned by
   what `solve_task` actually ran, worked out by the new
   `jupyddl.api.resolve_heuristic`.
 
+Wrong answers from the PDDL front end. The parser and the PDDL 3 compilations
+handed the grounder a different problem from the one written, so plans
+validated — against the wrong problem. Each case is now pinned by
+`tests/test_frontend_semantics.py`.
+
+- **Durative actions merged their at-start and at-end effects**, and an add
+  beat a delete, so `(at start (busy)) (at end (not (busy)))` ended with
+  `(busy)` true. The at-end effects now apply after the at-start ones and win a
+  conflict, and over-all and at-end conditions are checked in the state after
+  the at-start effects rather than before them. `always` is checked in that
+  state too; the other trajectory constraints are refused when a durative
+  action has at-start effects, because their monitors cannot see it.
+- **`sometime-after` could not be met by the final state.** An obligation
+  recorded by the last action's monitor could never be discharged, so the
+  plan `[t, r]` was reported unsolvable; the goal now accepts the response
+  holding at the end.
+- **`forall` around a trajectory constraint moved inside it**:
+  `(forall (?x) (sometime (lit ?x)))` meant one moment with every `?x` lit at
+  once. It is now one constraint per object. A soft constraint under `forall`
+  crashed with an `AttributeError`; it is refused by name like the others.
+- **A goal preference under `forall` kept its free variable** and could never
+  be satisfied; it is now one preference per object. Under `not`, `or`, `imply`
+  or `exists` a preference silently made the goal false; it is now an error.
+- **Timed initial literals slipped past the PDDL 3 machinery.** The
+  `at-most-once` and `sometime-after` monitors ignored the states literals
+  fired in, a literal could fire after the preferences had been paid out, and
+  a plan could end before a literal that was already due had fired.
+- **Object fluents in trajectory constraints** were read as numeric
+  comparisons; they are now compiled as everywhere else. Assigning one object
+  fluent's value to another took the function's name for an object; it is
+  refused.
+- **The metric.** A preference the metric does not mention cost 1 to violate
+  rather than nothing, a metric without `(total-cost)` still charged for
+  actions, `maximize` was silently minimised, and `(total-time)` charged an
+  instantaneous action 1. `maximize`, any metric other than `(total-cost)` or
+  `(total-time)` plus weighted `(is-violated p)` terms, and a metric pricing a
+  preference the goal does not declare are now refused.
+- **`ground()` edited the domain it was given**, so a second problem grounded
+  against the same parsed domain inherited the first one's synthetic actions
+  and lost the domain's own constraints.
+- **Misspelt PDDL was accepted.** `:preconditon` gave an action with no
+  precondition and `(:goals ...)` a problem with an empty goal; unknown keys
+  and sections and a missing `:goal` are now errors that name them. Malformed
+  input — `(?x -)`, `(when (q))`, `(:goal)` — raised a bare `IndexError`; it is
+  a `PDDLError`, and an unbalanced parenthesis names its line.
+- **Objects called `nan`, `inf` or `infinity` were read as numbers.**
+- **`(increase (total-cost) (road-length ?a ?b))` was refused** although
+  `:action-costs` is listed as native. A cost over static functions is now
+  evaluated when grounding, so the IPC `transport` domains load. `:fluents`
+  now implies `:object-fluents`, and `:ucpop`, `:domain-axioms` and
+  `:safety-constraints` are refused by name rather than as unknown flags.
+
 ## [2.4.0]
 
 ### Added

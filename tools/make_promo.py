@@ -1306,7 +1306,10 @@ def scene_requirements(fig, t, data):
             color=GOOD,
             alpha=alpha,
         )
-        text(fig, 0.205, 0.172, "of 21 supported", size=25, color=INK, alpha=alpha)
+        total = sum(counts.values())
+        text(
+            fig, 0.205, 0.172, f"of {total} supported", size=25, color=INK, alpha=alpha
+        )
         text(
             fig,
             0.205,

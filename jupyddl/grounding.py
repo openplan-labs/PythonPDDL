@@ -49,6 +49,7 @@ from .parser.ast import (
     Or,
     PDDLError,
     Problem,
+    TimedEffect,
     Truth,
     UnsupportedFeatureError,
     WhenEffect,
@@ -63,6 +64,7 @@ from .task import Axiom, CondEffect, Operator, Task
 MAX_DISJUNCTS = 20000
 
 GOAL_FACT = Atom("__goal-reached__", ())
+TOTAL_COST = "total-cost"
 
 
 def _ground_atom(atom: Atom, subst: dict) -> Atom:
@@ -287,6 +289,24 @@ class _RawOp:
     synthetic: bool = False
 
 
+def _new_acc() -> dict:
+    """An empty accumulator for one ground action's effects."""
+    return {
+        "add": set(),
+        "delete": set(),
+        "cond": [],
+        "numeric": [],
+        "cost": 0.0,
+        "has_cost": False,
+        # (increase (total-cost) <expression>): evaluated once the instance is
+        # known, from the static functions in :init.
+        "cost_exprs": [],
+        # A durative action's at-start phase, kept for regressing its
+        # over-all and at-end conditions.
+        "start": None,
+    }
+
+
 def _collect_effect(eff, subst, type_objects, cpos, cneg, acc):
     if isinstance(eff, ConjunctiveEffect):
         for part in eff.parts:
@@ -311,7 +331,10 @@ def _collect_effect(eff, subst, type_objects, cpos, cneg, acc):
                 "(increase (total-cost) ...) inside a 'when' is not supported: "
                 "an action's cost may not depend on the state"
             )
-        acc["cost"] += eff.amount
+        if isinstance(eff.amount, (int, float)):
+            acc["cost"] += eff.amount
+        else:
+            acc["cost_exprs"].append(_ground_expression(eff.amount, subst))
         acc["has_cost"] = True
     elif isinstance(eff, NumericEffect):
         if cpos or cneg:
@@ -344,46 +367,259 @@ def _collect_effect(eff, subst, type_objects, cpos, cneg, acc):
                 cneg | disjunct.neg,
                 acc,
             )
+    elif isinstance(eff, TimedEffect):
+        if cpos or cneg:  # pragma: no cover - the parser never nests one
+            raise PDDLError("a durative action's timed effects cannot be conditional")
+        start, end = _new_acc(), _new_acc()
+        _collect_effect(eff.start, subst, type_objects, set(), set(), start)
+        _collect_effect(eff.end, subst, type_objects, set(), set(), end)
+        _sequence(start, end, acc)
     else:
         raise PDDLError(f"unexpected effect node: {eff!r}")
 
 
-def _effect_predicates(domain: Domain) -> set:
-    preds: set = set()
-
-    def walk(eff):
-        if isinstance(eff, ConjunctiveEffect):
-            for part in eff.parts:
-                walk(part)
-        elif isinstance(eff, (AddEffect, DelEffect)):
-            preds.add(eff.atom.predicate)
-        elif isinstance(eff, (ForallEffect, WhenEffect)):
-            walk(eff.body)
-
-    for action in domain.actions:
-        walk(action.effect)
-    return preds
+def _maybe_changed(phase: dict) -> set:
+    """Facts a phase's *conditional* effects may add or delete."""
+    out: set = set()
+    for _, _, cadd, cdel in phase["cond"]:
+        out |= cadd | cdel
+    return out
 
 
-def _mentions_total_cost(expression) -> bool:
-    if isinstance(expression, FluentRef):
-        return expression.name == "total-cost"
-    if isinstance(expression, Arithmetic):
-        return _mentions_total_cost(expression.left) or _mentions_total_cost(
-            expression.right
+def _regress(pos, neg, start: dict, what: str):
+    """Rewrite a condition on the state *after* ``start`` as one on the state
+    before it, or return None when ``start`` makes it false.
+
+    A fact the start phase adds is true afterwards (adds win), one it deletes
+    is false, and anything else is read from the earlier state unchanged. A
+    fact a start-phase ``when`` may change depends on whether that fired, which
+    one conjunction cannot say: refused.
+    """
+    maybe = _maybe_changed(start)
+    keep_pos, keep_neg = set(), set()
+    for atom in pos:
+        if atom in start["add"]:
+            continue
+        _refuse_if_maybe(atom, maybe, what)
+        if atom in start["delete"]:
+            return None
+        keep_pos.add(atom)
+    for atom in neg:
+        if atom in start["add"]:
+            return None
+        _refuse_if_maybe(atom, maybe, what)
+        if atom in start["delete"]:
+            continue
+        keep_neg.add(atom)
+    return keep_pos, keep_neg
+
+
+def _refuse_if_maybe(atom, maybe: set, what: str) -> None:
+    if atom in maybe:
+        raise UnsupportedFeatureError(
+            f"{what} reads {atom}, which an at-start conditional effect may "
+            "change; that is not supported"
         )
+
+
+def _refuse_numeric_overlap(written: set, read: set, what: str) -> None:
+    overlap = sorted(str(ref) for ref in written & read)
+    if overlap:
+        raise UnsupportedFeatureError(
+            f"{what} reads {', '.join(overlap)}, which an at-start effect of the "
+            "same action changes; that is not supported"
+        )
+
+
+def _sequence(start: dict, end: dict, acc: dict) -> None:
+    """Fold a durative action's at-start phase, then its at-end phase, into one.
+
+    The at-end effects happen second, so they win a conflict: an at-start add
+    of something the end deletes is dropped, and an at-start delete of
+    something the end adds loses to the add anyway. At-end ``when`` conditions
+    read the state after the at-start effects, so they are regressed through
+    them. Two cases one operator cannot express are refused: an at-end
+    conditional delete of something the start adds (adds win inside one
+    operator, so the delete could never take effect), and numeric at-end
+    effects that read or write what the at-start ones wrote.
+    """
+    end_add, end_delete = set(end["add"]), set(end["delete"])
+    end_cond = []
+    for cpos, cneg, cadd, cdel in end["cond"]:
+        regressed = _regress(cpos, cneg, start, "an at-end conditional effect")
+        if regressed is None:
+            continue  # the start phase made its condition false
+        if not regressed[0] and not regressed[1]:
+            end_add |= cadd  # ...or true, so it always fires
+            end_delete |= cdel
+            continue
+        end_cond.append((frozenset(regressed[0]), frozenset(regressed[1]), cadd, cdel))
+    start_add = start["add"] - end_delete
+    start_cond = [
+        (cpos, cneg, cadd - end_delete, cdel)
+        for cpos, cneg, cadd, cdel in start["cond"]
+    ]
+    may_add = set(start_add)
+    for _, _, cadd, _ in start_cond:
+        may_add |= cadd
+    for _, _, _, cdel in end_cond:
+        clash = sorted(str(atom) for atom in cdel & may_add)
+        if clash:
+            raise UnsupportedFeatureError(
+                f"an at-end conditional effect deletes {', '.join(clash)}, which "
+                "the at-start effects add; that is not supported"
+            )
+
+    written = {target for _, target, _ in start["numeric"]}
+    for _, target, value in end["numeric"]:
+        read: set = {target}
+        _collect_fluents(value, read)
+        _refuse_numeric_overlap(written, read, "a numeric at-end effect")
+
+    acc["add"] |= start_add | end_add
+    acc["delete"] |= start["delete"] | end_delete
+    acc["cond"].extend(start_cond + end_cond)
+    acc["numeric"].extend(start["numeric"] + end["numeric"])
+    acc["cost"] += start["cost"] + end["cost"]
+    acc["has_cost"] = acc["has_cost"] or start["has_cost"] or end["has_cost"]
+    acc["cost_exprs"].extend(start["cost_exprs"] + end["cost_exprs"])
+    acc["start"] = start
+
+
+def _late_disjuncts(action, subst, type_objects, acc) -> list:
+    """A durative action's over-all and at-end conditions, as pre-state DNF.
+
+    They hold in the state after the at-start effects; regressing them through
+    those effects turns them into conditions on the state the action starts in,
+    which is all a single sequential operator can check.
+    """
+    start = acc["start"] or _new_acc()
+    written = {target for _, target, _ in start["numeric"]}
+    what = f"an over-all or at-end condition of '{action.name}'"
+    out = []
+    for disjunct in _dnf(action.late_condition, subst, type_objects):
+        regressed = _regress(disjunct.pos, disjunct.neg, start, what)
+        if regressed is None:
+            continue
+        read: set = set()
+        for comparison in disjunct.comparisons:
+            _collect_fluents(comparison.left, read)
+            _collect_fluents(comparison.right, read)
+        _refuse_numeric_overlap(written, read, what)
+        out.append(_Disjunct(regressed[0], regressed[1], list(disjunct.comparisons)))
+    return out
+
+
+def _leaf_effects(effect):
+    """Every add, delete, numeric or cost effect inside ``effect``."""
+    if isinstance(effect, ConjunctiveEffect):
+        for part in effect.parts:
+            yield from _leaf_effects(part)
+    elif isinstance(effect, (ForallEffect, WhenEffect)):
+        yield from _leaf_effects(effect.body)
+    elif isinstance(effect, TimedEffect):
+        yield from _leaf_effects(effect.start)
+        yield from _leaf_effects(effect.end)
+    else:
+        yield effect
+
+
+def _effect_predicates(domain: Domain) -> set:
+    return {
+        eff.atom.predicate
+        for action in domain.actions
+        for eff in _leaf_effects(action.effect)
+        if isinstance(eff, (AddEffect, DelEffect))
+    }
+
+
+def _assigned_functions(domain: Domain) -> set:
+    """Names of the numeric functions some effect changes; the rest are static."""
+    return {
+        eff.target.name
+        for action in domain.actions
+        for eff in _leaf_effects(action.effect)
+        if isinstance(eff, NumericEffect)
+    }
+
+
+def _cost_functions(domain: Domain) -> set:
+    """Names of the functions ``(increase (total-cost) <expr>)`` reads."""
+    read: set = set()
+    for action in domain.actions:
+        for eff in _leaf_effects(action.effect):
+            if isinstance(eff, IncreaseCostEffect) and not isinstance(
+                eff.amount, (int, float)
+            ):
+                _collect_fluents(eff.amount, read)
+    return {ref.name for ref in read}
+
+
+def _mentions(expression, name: str) -> bool:
+    if isinstance(expression, FluentRef):
+        return expression.name == name
+    if isinstance(expression, Arithmetic):
+        return _mentions(expression.left, name) or _mentions(expression.right, name)
     return False
 
 
+def _cost_model(problem: Problem) -> str:
+    """What a domain action costs, according to the metric.
+
+    * no metric — its cost effect, else its duration, else 1: cost-optimal
+      means shortest, or makespan-optimal for durative actions;
+    * a metric over ``(total-cost)`` — its cost effect, else 0, as in IPC
+      planners;
+    * a metric over ``(total-time)`` — its duration, so the sequential
+      makespan is minimised (0 for an instantaneous action);
+    * any other metric (only preference penalties) — 0: what an action costs
+      does not enter the metric at all.
+
+    The parser has already refused metrics of any other shape.
+    """
+    if problem.metric is None:
+        return "default"
+    expression = problem.metric[1]
+    if _mentions(expression, "total-time"):
+        return "time"
+    if _mentions(expression, TOTAL_COST):
+        return "cost"
+    return "free"
+
+
+def _static_value(expression, values: dict, assigned: set, action_name: str):
+    """Evaluate a ground cost expression from :init; None if it is undefined."""
+    if isinstance(expression, Number):
+        return float(expression.value)
+    if isinstance(expression, FluentRef):
+        if expression.name in assigned or expression.name == TOTAL_COST:
+            raise UnsupportedFeatureError(
+                f"the cost of '{action_name}' reads {expression}, which an effect "
+                "changes; (increase (total-cost) ...) may only read static "
+                "functions, whose value is fixed by :init"
+            )
+        return values.get(expression)
+    if isinstance(expression, Arithmetic):
+        left = _static_value(expression.left, values, assigned, action_name)
+        right = _static_value(expression.right, values, assigned, action_name)
+        if left is None or right is None:
+            return None
+        if expression.op == "+":
+            return left + right
+        if expression.op == "-":
+            return left - right
+        if expression.op == "*":
+            return left * right
+        return None if right == 0 else left / right
+    raise PDDLError(f"unexpected numeric expression: {expression!r}")
+
+
 def _ground_raw_operators(domain, problem, type_objects) -> list:
-    # Under a metric over (total-cost), an action that never increases it is
-    # free -- that is what the metric says, and what IPC planners do. Without
-    # one, every action costs 1 and cost-optimal means shortest.
-    action_costs = problem.metric is not None and _mentions_total_cost(
-        problem.metric[1]
-    )
+    model = _cost_model(problem)
+    assigned = _assigned_functions(domain)
     raw = []
     for action in domain.actions:
+        synthetic = action.name.startswith(SYNTHETIC_PREFIX)
         pools = [type_objects.get(typ, ()) for (_, typ) in action.parameters]
         for combo in product(*pools):
             subst = {var: obj for (var, _), obj in zip(action.parameters, combo)}
@@ -391,27 +627,36 @@ def _ground_raw_operators(domain, problem, type_objects) -> list:
             if not disjuncts:
                 continue  # precondition is unsatisfiable for this instance
 
-            acc = {
-                "add": set(),
-                "delete": set(),
-                "cond": [],
-                "numeric": [],
-                "cost": 0.0,
-                "has_cost": False,
-            }
+            acc = _new_acc()
             _collect_effect(action.effect, subst, type_objects, set(), set(), acc)
+            if action.late_condition is not None:
+                late = _late_disjuncts(action, subst, type_objects, acc)
+                disjuncts = _cross(disjuncts, late)
+                if not disjuncts:
+                    continue
 
             args = ",".join(combo)
             base = f"{action.name}({args})" if combo else action.name
             duration = 0.0
             if action.duration is not None:
                 duration = _constant_value(action.duration, subst, action.name)
-            if acc["has_cost"]:
-                cost = acc["cost"]
-            elif action_costs:
+
+            values = [
+                _static_value(expression, problem.init_numeric, assigned, action.name)
+                for expression in acc["cost_exprs"]
+            ]
+            if None in values:
+                continue  # reads an undefined function: PDDL makes it inapplicable
+            declared = acc["cost"] + sum(values)
+
+            # Penalties and other bookkeeping costs a compilation declared are
+            # always charged; what a domain action costs depends on the metric.
+            if acc["has_cost"] and (synthetic or model in ("default", "cost")):
+                cost = declared
+            elif model in ("cost", "free"):
                 cost = 0
-            elif duration:
-                # A temporal action with no explicit cost: optimise makespan.
+            elif model == "time" or duration:
+                # Makespan: a durative action costs its duration.
                 cost = duration
             else:
                 cost = 1
@@ -705,7 +950,11 @@ def ground(domain: Domain, problem: Problem) -> Task:
         resolved_axioms.append((head, parts[0], parts[1]))
 
     # --- numeric fluents -----------------------------------------------------
-    fluents: set = set(problem.init_numeric)
+    # A static function only action costs read, like `(road-length ?a ?b)`, was
+    # folded into the operator costs above; it is not a state variable. If a
+    # condition reads it as well, the loop below brings that reading back.
+    cost_only = _cost_functions(domain)
+    fluents: set = {ref for ref in problem.init_numeric if ref.name not in cost_only}
     for op, *_ in resolved:
         for comparison in op.comparisons:
             _collect_fluents(comparison.left, fluents)

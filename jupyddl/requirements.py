@@ -69,7 +69,8 @@ def _r(name, pddl, support, summary, note="", implies=()):
     return Requirement(name, pddl, support, summary, note, tuple(implies))
 
 
-# The full PDDL 1.2 / 2.1 / 2.2 / 3.0 / 3.1 requirement vocabulary.
+# The PDDL 1.2 / 2.1 / 2.2 / 3.0 / 3.1 requirement vocabulary. A flag missing
+# from here is refused as unknown, which is no worse than refusing it by name.
 REQUIREMENTS = {
     r.name: r
     for r in [
@@ -85,7 +86,8 @@ REQUIREMENTS = {
             "1.2",
             NATIVE,
             "Typed parameters and objects, with type hierarchies.",
-            "Subtypes are resolved transitively when building the object pools.",
+            "Subtypes are resolved transitively when building the object pools. "
+            "`(either a b)` types are refused; declare a common supertype instead.",
         ),
         _r(
             ":negative-preconditions",
@@ -177,9 +179,18 @@ REQUIREMENTS = {
             NATIVE,
             "`(increase (total-cost) k)` and metric minimisation.",
             "Operator costs feed straight into g, so A*/Dijkstra optimise "
-            "cost. Under a metric over `(total-cost)` an action with no cost "
-            "effect is free, as in IPC planners; without a metric every action "
-            "costs 1. A cost inside `when` and a negative cost are refused.",
+            "cost. `k` is a constant or an expression over static functions, "
+            "such as `(road-length ?from ?to)`, evaluated from `:init` when the "
+            "action is grounded; one that reads a function some effect changes "
+            "is refused. Under a metric over `(total-cost)` an action with no "
+            "cost effect is free, as in IPC planners; under one over "
+            "`(total-time)` an action costs its duration; under one that "
+            "mentions neither, every action is free; without a metric every "
+            "action costs 1 (a durative one, its duration). The metric must be "
+            "`minimize` over `(total-cost)` or "
+            "`(total-time)`, plus constant multiples of `(is-violated p)` and "
+            "constants; `maximize` and any other shape are refused. A cost "
+            "inside `when` and a negative cost are refused.",
         ),
         _r(
             ":numeric-fluents",
@@ -200,19 +211,27 @@ REQUIREMENTS = {
             "Numeric plus object fluents.",
             "Both halves are implemented; see the two rows above for what each "
             "one covers.",
-            implies=(":numeric-fluents",),
+            implies=(":numeric-fluents", ":object-fluents"),
         ),
         _r(
             ":durative-actions",
             "2.1",
             PARTIAL,
             "`(:durative-action ...)` with timed conditions and effects.",
-            "Compiled to sequential actions: at-start and over-all conditions "
-            "become the precondition, at-start and at-end effects are merged, "
-            "and the duration is carried through so plans report a makespan. "
-            "Actions therefore never overlap — this models sequential temporal "
-            "planning, not true concurrency, so a plan needing two actions to "
-            "run at the same time will not be found.",
+            "Compiled to one sequential action each. At-start conditions are "
+            "checked in the state the action starts in; over-all and at-end "
+            "conditions in the state after its at-start effects (they are "
+            "regressed through those effects when grounding). The at-start "
+            "effects apply first and the at-end effects after them, so an at-end "
+            "effect wins a conflict. The duration is carried through so plans "
+            "report a makespan, and a `(total-time)` metric minimises it. Actions "
+            "therefore never overlap — this models sequential temporal planning, "
+            "not true concurrency, so a plan needing two actions to run at the "
+            "same time will not be found. Refused: every effect and condition "
+            "needs a time specifier (put a `when` inside one: `(at end (when c "
+            "e))`); an at-start numeric effect that a later condition or effect "
+            "of the same action reads; an at-end `when` that deletes what the "
+            "at-start effects add, or reads a fact an at-start `when` may change.",
         ),
         _r(
             ":duration-inequalities",
@@ -224,6 +243,32 @@ REQUIREMENTS = {
             "prefers a longer action, so the tightest lower bound is "
             "makespan-optimal. Strict `<`/`>` are refused: they have no shortest "
             "feasible value.",
+        ),
+        _r(
+            ":domain-axioms",
+            "1.2",
+            REJECTED,
+            "PDDL 1.2 `(:axiom ...)` blocks.",
+            "Superseded by `:derived-predicates`, which is supported: write each "
+            "axiom as a `(:derived ...)` rule.",
+        ),
+        _r(
+            ":safety-constraints",
+            "1.2",
+            REJECTED,
+            "PDDL 1.2 `(:safety ...)` constraints.",
+            "Superseded by PDDL 3 trajectory constraints: `(:constraints (always "
+            "...))` says the same thing and is supported.",
+        ),
+        _r(
+            ":ucpop",
+            "1.2",
+            REJECTED,
+            "The PDDL 1.2 UCPOP bundle: `:adl` plus `:domain-axioms` and "
+            "`:safety-constraints`.",
+            "Refused because two of its parts are; declare `:adl` (and "
+            "`:derived-predicates` for axioms) instead.",
+            implies=(":adl", ":domain-axioms", ":safety-constraints"),
         ),
         _r(
             ":continuous-effects",
@@ -239,10 +284,12 @@ REQUIREMENTS = {
             "Facts that become true (or false) at a given absolute time.",
             "Elapsed time becomes a numeric fluent advanced by action durations. "
             "Each literal gets a firing action guarded on the clock plus a wait "
-            "action that advances it, and every domain action is blocked while a "
-            "due literal has not fired. Because actions never overlap, a literal "
-            "scheduled strictly inside an action's duration fires immediately "
-            "after that action rather than during it.",
+            "action that advances it, and every domain action — and the end of "
+            "the plan — is blocked while a due literal has not fired. Because "
+            "actions never overlap, a literal scheduled strictly inside an "
+            "action's duration fires immediately after that action rather than "
+            "during it. A `(total-time)` metric is refused here: waiting takes "
+            "time no action is charged for.",
         ),
         _r(
             ":preferences",
@@ -252,8 +299,13 @@ REQUIREMENTS = {
             "Goal preferences are compiled into a priced choice: a closing "
             "action freezes the state, then each preference is resolved either "
             "for free (if it holds) or at its `(is-violated p)` weight, so "
-            "cost-optimal search minimises the metric. Preferences over "
-            "trajectory constraints or inside action preconditions are refused.",
+            "cost-optimal search minimises the metric. Timed literals cannot "
+            "fire after the closing action. A preference under `forall` is one "
+            "preference per object, each priced at the name's weight. Under a "
+            "metric, a preference it does not mention costs nothing to violate; "
+            "without one, each costs 1. Preferences over trajectory "
+            "constraints, inside action preconditions, or under `or`, `not`, "
+            "`imply` or `exists` are refused.",
         ),
         _r(
             ":constraints",
@@ -262,9 +314,13 @@ REQUIREMENTS = {
             "State trajectory constraints.",
             "`always`, `at-end`, `sometime`, `sometime-before`, `sometime-after` "
             "and `at-most-once` are compiled into invariants on every action, "
-            "monitor facts and extra goal conjuncts. The metric-time forms "
-            "(`within`, `always-within`, `hold-after`, `hold-during`) are "
-            "refused by name.",
+            "monitor facts and extra goal conjuncts; the monitors also watch the "
+            "states timed literals fire in. A constraint under `forall` becomes "
+            "one constraint per object. The metric-time forms (`within`, "
+            "`always-within`, `hold-after`, `hold-during`) are refused by name, "
+            "and so is any form but `always` and `at-end` when a durative action "
+            "has at-start effects: its monitor cannot see the state between "
+            "that action's start and end.",
         ),
         _r(
             ":object-fluents",
@@ -272,9 +328,12 @@ REQUIREMENTS = {
             PARTIAL,
             "Functions returning objects rather than numbers.",
             "Compiled to a predicate plus a uniqueness rule: `(= (location ?p) "
-            "?x)` becomes a fact and `assign` clears the old value first. Using "
-            "an object fluent as a *nested term* — `(at ?t (location ?p))` — is "
-            "refused; write the equality form instead.",
+            "?x)` becomes a fact and `assign` clears the old value first, in "
+            "preconditions, effects, goals and trajectory constraints alike. "
+            "Using an object fluent as a *nested term* — `(at ?t (location "
+            "?p))` — or as the value of another, as in `(assign (location ?p) "
+            "(location ?q))`, is refused; write the equality form with a "
+            "variable instead.",
         ),
     ]
 }
