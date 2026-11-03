@@ -147,6 +147,20 @@ jupyddl solve demos/blocksworld12/domain.pddl demos/blocksworld12/problem.pddl \
     --search gbfs --heuristic hff --time-limit 10
 ```
 
+`benchmark` and `demo` stop each search after 10 seconds unless you say
+otherwise (`--time-limit 0` for none), so one hard instance cannot stall a
+whole table. Exit codes let a script tell the outcomes apart:
+
+| Code | Meaning |
+|---|---|
+| 0 | solved, and the plan validates |
+| 1 | the search finished and found no plan |
+| 2 | bad input: a missing file, a parse error, an unknown name |
+| 3 | a budget stopped the search before it found a plan |
+| 4 | a plan was found but failed validation (a bug — please report it) |
+
+Errors are one line; set `JUPYDDL_DEBUG=1` for the full traceback.
+
 ### The live dashboard
 
 `--live` repaints a compact view of the search as it runs — sparklines for the

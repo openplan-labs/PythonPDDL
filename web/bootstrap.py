@@ -9,6 +9,7 @@ JS boundary is JSON, so no proxy objects leak out.
 """
 
 import json
+import math
 import os
 import sys
 import tempfile
@@ -45,12 +46,14 @@ class WebObserver(SearchObserver):
         if self.count % self.stride:
             return
         self.kept += 1
-        hv = 0.0 if h is None or h != h else float(h)
+        # inf (a dead end) and NaN are not JSON; JSON.parse would reject the
+        # whole message and abort the run.
+        hv = float(h) if h is not None and math.isfinite(h) else 0.0
         self.buffer.append([
             self.count,
             float(g),
             hv,
-            float(f if f else g + hv),
+            float(f) if f and math.isfinite(f) else float(g) + hv,
             int(depth),
             int(open_size),
             int(stats.generated) if stats else 0,

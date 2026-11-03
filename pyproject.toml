@@ -40,7 +40,9 @@ viz = ["matplotlib>=3.6"]
 # library alone; NumPy just makes the batched passes one to two orders of
 # magnitude faster, and tests/test_learn.py pins the two paths together.
 learn = ["numpy>=1.21"]
-dev = ["pytest>=7", "pytest-cov>=4", "flake8>=6", "black>=23"]
+# black is held to one major version, the same one `format.yml` runs: its
+# stable style changes every January, and two majors fight over every file.
+dev = ["pytest>=7", "pytest-cov>=4", "flake8>=6", "black>=26,<27"]
 
 [project.scripts]
 jupyddl = "jupyddl.cli:main"
@@ -65,7 +67,10 @@ packages = ["jupyddl"]
 # same reason. Dropping either leaves an sdist whose own test suite fails.
 [tool.hatch.build.targets.sdist]
 exclude = [
-    ".github/**",
+    # Workflows only: the suite checks that CONTRIBUTING.md and friends are in
+    # .github/, so dropping the whole directory ships an sdist whose own tests
+    # fail.
+    ".github/workflows/**",
     ".docs/assets/*.png",
     ".docs/assets/*.mp4",
     "logs/**",

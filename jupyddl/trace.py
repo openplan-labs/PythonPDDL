@@ -387,6 +387,7 @@ class TraceRecorder(SearchObserver):
         self._start = time.perf_counter()
         self.trace.planner = planner
         self.trace.heuristic = heuristic or ""
+        self._task = task
         if task is not None:
             self.trace.task_name = getattr(task, "name", "")
             self.trace.num_facts = getattr(task, "num_facts", 0)
@@ -505,7 +506,12 @@ class TraceRecorder(SearchObserver):
         self.trace.solved = bool(getattr(result, "solved", False))
         self.trace.cost = getattr(result, "cost", None)
         plan = getattr(result, "plan", None) or []
-        self.trace.plan = [op.name for op in plan]
+        # The plan as the user reads it: compiler bookkeeping (closing a plan,
+        # observing a constraint) hidden, disjunct tags like `#2` dropped.
+        task = getattr(self, "_task", None)
+        if task is not None and hasattr(task, "visible_plan"):
+            plan = task.visible_plan(plan)
+        self.trace.plan = [getattr(op, "base_name", op.name) for op in plan]
         stats = getattr(result, "stats", None)
         if stats is not None:
             self.trace.stats = stats.as_dict()

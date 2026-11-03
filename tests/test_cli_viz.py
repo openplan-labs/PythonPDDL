@@ -146,5 +146,25 @@ def test_demo_builds_a_gallery(tmp_path, capsys):
 
 def test_benchmark_reports_missing_folder(tmp_path, capsys):
     code = main(["benchmark", str(tmp_path / "nothing-here")])
-    assert code == 1
-    assert "No instances found" in capsys.readouterr().err
+    assert code == 2  # bad input, not "searched and found nothing"
+    assert "no instances found" in capsys.readouterr().err
+
+
+def test_a_dead_end_does_not_break_the_charts(tmp_path, examples_available):
+    pytest.importorskip("matplotlib", reason="needs the viz extra")
+    # ehc/hff on vehicle expands states with h = inf; the charts used to raise
+    # "Axis limits cannot be NaN or Inf" and colour them NaN.
+    progress, tree = tmp_path / "progress.png", tmp_path / "tree.png"
+    code = main(
+        ["solve", *paths("vehicle"), "-s", "ehc", "-H", "hff"]
+        + ["--plot", str(progress), "--tree", str(tree)]
+    )
+    assert code == 1 and progress.exists() and tree.exists()
+
+
+def test_an_empty_benchmark_is_a_clear_error():
+    pytest.importorskip("matplotlib", reason="needs the viz extra")
+    from jupyddl.viz import plot_benchmark_dashboard
+
+    with pytest.raises(ValueError, match="no benchmark rows"):
+        plot_benchmark_dashboard([])
