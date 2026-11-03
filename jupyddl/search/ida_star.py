@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import time
 
-from .base import Planner, heuristic_name
+from .base import BudgetExhausted, Planner, heuristic_name
 from .node import extract_plan, make_child, make_root
 from .result import SearchResult, SearchStats
 
@@ -22,6 +22,7 @@ class IDAStarSearch(Planner):
     optimal = True
 
     def search(self, task, heuristic=None, observer=None, budget=None) -> SearchResult:
+        self._require(heuristic)
         stats = SearchStats()
         start = time.perf_counter()
         if observer is not None:
@@ -44,9 +45,15 @@ class IDAStarSearch(Planner):
             if observer is not None:
                 observer.on_bound(float(threshold), iteration, stats)
             iteration += 1
-            found, nxt = self._dfs(
-                task, root, threshold, h_of, stats, {start_state}, observer
-            )
+            try:
+                found, nxt = self._dfs(
+                    task, root, threshold, h_of, stats, {start_state}, observer, budget
+                )
+            except BudgetExhausted:
+                break
+            except RecursionError:
+                stats.truncated = True  # deeper than Python's stack allows
+                break
             if found is not None:
                 stats.runtime = time.perf_counter() - start
                 result = SearchResult(True, extract_plan(found), found.g, stats)
@@ -61,13 +68,17 @@ class IDAStarSearch(Planner):
             observer.on_finish(result)
         return result
 
-    def _dfs(self, task, node, threshold, h_of, stats, on_path, observer=None):
+    def _dfs(
+        self, task, node, threshold, h_of, stats, on_path, observer=None, budget=None
+    ):
         h = h_of(node.state)
         f = node.g + h
         if f > threshold:
             return None, f
         if task.goal_reached(node.state):
             return node, threshold
+        if budget is not None and budget.exceeded(stats):
+            raise BudgetExhausted
         stats.expanded += 1
         if observer is not None:
             observer.on_expand(
@@ -99,7 +110,7 @@ class IDAStarSearch(Planner):
                 )
             on_path.add(succ)
             found, nxt = self._dfs(
-                task, child, threshold, h_of, stats, on_path, observer
+                task, child, threshold, h_of, stats, on_path, observer, budget
             )
             on_path.discard(succ)
             if found is not None:

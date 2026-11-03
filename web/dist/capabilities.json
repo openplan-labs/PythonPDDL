@@ -61,7 +61,7 @@
   },
   {
    "name": "bfs",
-   "optimal": true,
+   "optimal": false,
    "requires_heuristic": false,
    "summary": "FIFO breadth-first graph search. Optimal in number of actions."
   },
@@ -109,9 +109,9 @@
   },
   {
    "name": "iddfs",
-   "optimal": true,
+   "optimal": false,
    "requires_heuristic": false,
-   "summary": "Iterative-deepening DFS. Optimal in plan length with low memory."
+   "summary": "Iterative-deepening DFS. Shortest in plan length, with low memory."
   },
   {
    "name": "iw",

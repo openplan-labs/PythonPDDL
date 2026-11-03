@@ -17,6 +17,15 @@ from .node import extract_plan, make_child, make_root
 from .result import SearchResult, SearchStats
 
 
+class BudgetExhausted(Exception):
+    """Unwinds a recursive search once ``budget.exceeded`` has said stop.
+
+    ``Budget.exceeded`` has already set ``stats.truncated`` by then, so the
+    planner that catches this reports "no plan yet" (or its best plan so far)
+    rather than "no plan exists".
+    """
+
+
 class Planner:
     """Base class for all planners."""
 
@@ -35,6 +44,14 @@ class Planner:
         """
         raise NotImplementedError
 
+    def _require(self, heuristic) -> None:
+        """Fail clearly, not deep inside the search, when a heuristic is missing."""
+        if heuristic is None:
+            raise ValueError(
+                f"planner '{self.name}' needs a heuristic; pass one "
+                "('blind' if you want no guidance)"
+            )
+
 
 def heuristic_name(heuristic) -> str:
     """Best-effort display name for a heuristic (``""`` when there is none)."""
@@ -52,7 +69,9 @@ def best_first(
     prefers the node nearer the goal among equal ``f`` -- in which case
     observers are given its first element as ``f``.
     ``observer`` is an optional :class:`~jupyddl.trace.SearchObserver` that is
-    notified as the search progresses (see :mod:`jupyddl.trace`).
+    notified as the search progresses (see :mod:`jupyddl.trace`). It does not
+    call ``observer.on_start``: the planner wrapping it does, so the trace
+    records that planner's name rather than the engine's.
     """
     stats = SearchStats()
     start = time.perf_counter()

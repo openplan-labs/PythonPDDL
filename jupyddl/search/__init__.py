@@ -37,7 +37,9 @@ PLANNERS = {
     "awastar": AnytimeWeightedAStar,
 }
 
-# Planners that are cost-optimal given an admissible heuristic (or none).
+# Planners that are cost-optimal given an admissible heuristic (or none), and
+# whose run completed: a result with ``truncated`` set proves nothing. ``bfs``
+# and ``iddfs`` are not here -- they minimise plan *length*.
 OPTIMAL_PLANNERS = tuple(
     name for name, factory in PLANNERS.items() if getattr(factory, "optimal", False)
 )

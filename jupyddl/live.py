@@ -19,6 +19,8 @@ so it is also safe to use in CI logs and notebooks.
 from __future__ import annotations
 
 import math
+import os
+import re
 import shutil
 import sys
 import time
@@ -103,6 +105,7 @@ class TerminalDashboard(SearchObserver):
         self._best_h = math.inf
         self._start = time.perf_counter()
         self._last_paint = 0.0
+        self._last_line = 0.0
         self._lines = 0
         self._title = "jupyddl"
         self._latest = None
@@ -115,10 +118,13 @@ class TerminalDashboard(SearchObserver):
         return f"{_ANSI[key]}{text}{_ANSI['reset']}"
 
     def _width(self) -> int:
+        # The stream's own terminal, not stdout's: the dashboard usually writes
+        # to stderr, and the two can differ.
         try:
-            return max(48, min(shutil.get_terminal_size().columns - 2, 100))
-        except Exception:  # pragma: no cover - very unusual terminals
-            return 72
+            columns = os.get_terminal_size(self.stream.fileno()).columns
+        except (AttributeError, OSError, ValueError):
+            columns = shutil.get_terminal_size().columns
+        return max(20, min(columns - 2, 100))
 
     def _clear(self) -> None:
         if self._lines and self.interactive:
@@ -161,6 +167,9 @@ class TerminalDashboard(SearchObserver):
             self._c("muted", f"  {_fmt(rate)} nodes/s · {elapsed:.2f}s")
             + (self._c("muted", f" · {self._bounds} bounds") if self._bounds else ""),
         ]
+        # A line wider than the terminal wraps, and the cursor-up that erases
+        # the previous frame then climbs too few rows, smearing every repaint.
+        lines = [_clip(line, width + 1) for line in lines]
         self._clear()
         self.stream.write("\n".join(lines) + "\n")
         self.stream.flush()
@@ -174,10 +183,11 @@ class TerminalDashboard(SearchObserver):
         if self.interactive:
             self._render()
         else:
-            # Non-tty: a single appended line, much less often.
-            if now - self._start > 1 and int(now) % 2 == 0:
+            # Non-tty: a single appended line, at most every two seconds.
+            if now - self._start > 1 and now - self._last_line >= 2.0:
                 event = self._latest
                 if event is not None:
+                    self._last_line = now
                     self.stream.write(
                         f"  ... {_fmt(event.expanded)} expanded, "
                         f"{_fmt(event.generated)} generated, "
@@ -238,11 +248,37 @@ class TerminalDashboard(SearchObserver):
                 f"  ✔ solved · cost {result.cost} · "
                 f"{result.plan_length} actions · {elapsed:.2f}s",
             )
+        elif getattr(result, "truncated", False):
+            # Not "no plan": the budget ran out before the search finished.
+            verdict = self._c(
+                "orange", f"  ⏸ stopped by the budget, no plan yet · {elapsed:.2f}s"
+            )
         else:
             verdict = self._c("orange", f"  ✘ no plan found · {elapsed:.2f}s")
         self.stream.write(verdict + "\n")
         self.stream.flush()
         self._lines = 0
+
+
+_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _clip(line: str, width: int) -> str:
+    """Cut ``line`` to ``width`` visible characters, keeping colour codes intact."""
+    out, visible, pos = [], 0, 0
+    for match in _ESCAPE.finditer(line):
+        text = line[pos : match.start()]
+        if visible + len(text) > width:
+            out.append(text[: width - visible])
+            return "".join(out) + "\x1b[0m"
+        out.append(text)
+        visible += len(text)
+        out.append(match.group())
+        pos = match.end()
+    tail = line[pos:]
+    if visible + len(tail) > width:
+        return "".join(out) + tail[: width - visible] + ("\x1b[0m" if out else "")
+    return "".join(out) + tail
 
 
 def _num(value) -> str:

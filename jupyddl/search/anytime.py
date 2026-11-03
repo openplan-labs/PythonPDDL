@@ -70,6 +70,10 @@ class BranchAndBound(Planner):
                         observer.on_goal(node.state, node.g, node.depth, stats)
                 return
             if node.depth >= self.max_depth:
+                # Pruned by the depth cap, not by the bound: the incumbent is
+                # no longer a proof of optimality, and "no plan" is not one of
+                # unsolvability.
+                stats.truncated = True
                 return
             stats.expanded += 1
             if observer is not None:
@@ -85,6 +89,8 @@ class BranchAndBound(Planner):
                     action="" if node.action is None else node.action.name,
                 )
             for op in task.applicable_operators(node.state):
+                if budget is not None and budget.exceeded(stats):
+                    return  # do not evaluate the siblings left behind
                 succ = task.apply(op, node.state)
                 stats.generated += 1
                 if succ in on_path:
@@ -100,7 +106,10 @@ class BranchAndBound(Planner):
                 descend(child, on_path)
                 on_path.discard(succ)
 
-        descend(make_root(start), {start})
+        try:
+            descend(make_root(start), {start})
+        except RecursionError:
+            stats.truncated = True  # deeper than Python's stack allows
 
         stats.runtime = time.perf_counter() - started
         solved = best_plan is not None
