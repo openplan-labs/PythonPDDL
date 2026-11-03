@@ -304,6 +304,13 @@ def _collect_effect(eff, subst, type_objects, cpos, cneg, acc):
         else:
             acc["delete"].add(atom)
     elif isinstance(eff, IncreaseCostEffect):
+        if cpos or cneg:
+            # An operator has one cost. Charging this unconditionally would
+            # bill for an effect that did not fire.
+            raise UnsupportedFeatureError(
+                "(increase (total-cost) ...) inside a 'when' is not supported: "
+                "an action's cost may not depend on the state"
+            )
         acc["cost"] += eff.amount
         acc["has_cost"] = True
     elif isinstance(eff, NumericEffect):
@@ -358,7 +365,23 @@ def _effect_predicates(domain: Domain) -> set:
     return preds
 
 
+def _mentions_total_cost(expression) -> bool:
+    if isinstance(expression, FluentRef):
+        return expression.name == "total-cost"
+    if isinstance(expression, Arithmetic):
+        return _mentions_total_cost(expression.left) or _mentions_total_cost(
+            expression.right
+        )
+    return False
+
+
 def _ground_raw_operators(domain, problem, type_objects) -> list:
+    # Under a metric over (total-cost), an action that never increases it is
+    # free -- that is what the metric says, and what IPC planners do. Without
+    # one, every action costs 1 and cost-optimal means shortest.
+    action_costs = problem.metric is not None and _mentions_total_cost(
+        problem.metric[1]
+    )
     raw = []
     for action in domain.actions:
         pools = [type_objects.get(typ, ()) for (_, typ) in action.parameters]
@@ -385,11 +408,18 @@ def _ground_raw_operators(domain, problem, type_objects) -> list:
                 duration = _constant_value(action.duration, subst, action.name)
             if acc["has_cost"]:
                 cost = acc["cost"]
+            elif action_costs:
+                cost = 0
             elif duration:
                 # A temporal action with no explicit cost: optimise makespan.
                 cost = duration
             else:
                 cost = 1
+            if cost < 0:
+                raise PDDLError(
+                    f"action '{base}' has negative cost {cost}; "
+                    "(increase (total-cost) k) needs k >= 0"
+                )
 
             for index, disjunct in enumerate(disjuncts):
                 # Only tag the name when the split is real, so classical domains
@@ -527,6 +557,17 @@ class _Encoder:
         return self.comp_ids[atom]
 
 
+def _ids(ids) -> frozenset:
+    """A fact-id set built in sorted order.
+
+    A set of small ints iterates in insertion order wherever two ids share a
+    hash slot, so a set filled while walking atoms in hash order iterates
+    differently under each PYTHONHASHSEED -- enough to change which of two
+    tied facts a heuristic picks.
+    """
+    return frozenset(sorted(ids))
+
+
 def _ground_axioms(domain: Domain, type_objects: dict) -> list:
     """Ground every derived-predicate rule into (head atom, disjunct) pairs."""
     grounded = []
@@ -608,6 +649,31 @@ def ground(domain: Domain, problem: Problem) -> Task:
                 cond.append((cpos_f, cneg_f, cadd, cdel))
         resolved.append((op, pre_pos_fluent, pre_neg_fluent, add, delete, cond))
 
+    # --- numeric fluents that are never defined ------------------------------
+    # A fluent with no value in :init that no action assigns stays undefined,
+    # and PDDL makes any condition or effect that reads it fail. Reading it as
+    # 0 instead would let `(distance a c)` for a road that does not exist cost
+    # nothing. (A fluent defined later by an effect is not tracked.)
+    assigned = {target for op, *_ in resolved for _, target, _ in op.numeric}
+    defined = set(problem.init_numeric) | assigned
+
+    def reads_undefined(comparisons, values=()) -> bool:
+        read: set = set()
+        for comparison in comparisons:
+            _collect_fluents(comparison.left, read)
+            _collect_fluents(comparison.right, read)
+        for value in values:
+            _collect_fluents(value, read)
+        return any(ref not in defined and ref.name != "total-cost" for ref in read)
+
+    resolved = [
+        entry
+        for entry in resolved
+        if not reads_undefined(
+            entry[0].comparisons, [value for _, _, value in entry[0].numeric]
+        )
+    ]
+
     # --- goal ----------------------------------------------------------------
     goal_disjuncts = _dnf(problem.goal, {}, type_objects)
     if not goal_disjuncts:
@@ -617,7 +683,7 @@ def ground(domain: Domain, problem: Problem) -> Task:
     unsolvable = True
     for disjunct in goal_disjuncts:
         parts = resolve_literals(disjunct.pos, disjunct.neg)
-        if parts is None:
+        if parts is None or reads_undefined(disjunct.comparisons):
             continue  # this way of satisfying the goal is statically impossible
         unsolvable = False
         resolved_goals.append((parts[0], parts[1], disjunct.comparisons))
@@ -630,6 +696,12 @@ def ground(domain: Domain, problem: Problem) -> Task:
         parts = resolve_literals(disjunct.pos, disjunct.neg)
         if parts is None:
             continue
+        if any(atom.predicate in derived_preds for atom in parts[1]):
+            raise UnsupportedFeatureError(
+                f"the rule for {head} negates a derived predicate; that needs "
+                "stratified axiom evaluation, which is not supported (negating "
+                "a derived predicate in a precondition or goal is fine)"
+            )
         resolved_axioms.append((head, parts[0], parts[1]))
 
     # --- numeric fluents -----------------------------------------------------
@@ -656,11 +728,30 @@ def ground(domain: Domain, problem: Problem) -> Task:
     )
 
     # --- encode facts --------------------------------------------------------
+    # Fact ids are handed out in sorted order. Assigning them while walking
+    # sets of atoms ties every id to string hashing, so PYTHONHASHSEED changed
+    # LM-cut's tie-breaking and with it the expansions and the plan.
+    every_atom: set = {a for a in init_atoms if not is_static(a)}
+    for op, pp, pn, add, delete, cond in resolved:
+        every_atom |= pp | pn | add | delete
+        for cpos_f, cneg_f, cadd, cdel in cond:
+            every_atom |= cpos_f | cneg_f | cadd | cdel
+    for goal_pos, goal_neg, _ in resolved_goals:
+        every_atom |= goal_pos | goal_neg
+    for head, body_pos, body_neg in resolved_axioms:
+        every_atom |= {head} | body_pos | body_neg
+    for atom in sorted(every_atom, key=str):
+        enc.fact(atom)
+    for atom in sorted(tracked_neg, key=str):
+        enc.comp(atom)
+
     init_ids = {enc.fact(a) for a in init_atoms if not is_static(a)}
     for atom in tracked_neg:
         cid = enc.comp(atom)
         if atom not in init_atoms:
             init_ids.add(cid)
+
+    complement_ids = frozenset(enc.comp(a) for a in tracked_neg)
 
     def encode_add_del(add_atoms, del_atoms):
         add_ids = {enc.fact(a) for a in add_atoms}
@@ -671,18 +762,23 @@ def ground(domain: Domain, problem: Problem) -> Task:
         for a in del_atoms:
             if a in tracked_neg:
                 add_ids.add(enc.comp(a))
-        return frozenset(add_ids), frozenset(del_ids)
+        # An atom both added and deleted ends up true (add wins), so its
+        # complement must end up false: for complements the delete wins.
+        add_ids -= del_ids & complement_ids
+        return _ids(add_ids), _ids(del_ids)
 
     operators = []
     for op, pp, pn, add, delete, cond in resolved:
-        precond = {enc.fact(a) for a in pp} | {enc.comp(a) for a in pn}
+        precond = _ids({enc.fact(a) for a in pp} | {enc.comp(a) for a in pn})
         add_ids, del_ids = encode_add_del(add, delete)
         cond_effects = []
+        touched = set(add_ids)
         for cpos_f, cneg_f, cadd, cdel in cond:
             cond_ids = {enc.fact(a) for a in cpos_f} | {enc.comp(a) for a in cneg_f}
             cadd_ids, cdel_ids = encode_add_del(cadd, cdel)
             if cadd_ids or cdel_ids:
-                cond_effects.append(CondEffect(frozenset(cond_ids), cadd_ids, cdel_ids))
+                cond_effects.append(CondEffect(_ids(cond_ids), cadd_ids, cdel_ids))
+                touched |= cadd_ids
         numeric_pre = tuple(_compile_comparison(c, index_of) for c in op.comparisons)
         numeric_eff = tuple(
             _compile_numeric_effect(kind, index_of[target], value, index_of)
@@ -691,7 +787,7 @@ def ground(domain: Domain, problem: Problem) -> Task:
         operators.append(
             Operator(
                 op.name,
-                frozenset(precond),
+                precond,
                 add_ids,
                 del_ids,
                 tuple(cond_effects),
@@ -699,6 +795,9 @@ def ground(domain: Domain, problem: Problem) -> Task:
                 numeric_pre,
                 numeric_eff,
                 op.duration,
+                complements=(
+                    frozenset(touched) & complement_ids if cond_effects else frozenset()
+                ),
             )
         )
 
@@ -719,7 +818,7 @@ def ground(domain: Domain, problem: Problem) -> Task:
             operators.append(
                 Operator(
                     name,
-                    frozenset(precond),
+                    _ids(precond),
                     frozenset({goal_fact}),
                     frozenset(),
                     (),
@@ -738,9 +837,7 @@ def ground(domain: Domain, problem: Problem) -> Task:
     axioms = tuple(
         Axiom(
             enc.fact(head),
-            frozenset(
-                {enc.fact(a) for a in body_pos} | {enc.comp(a) for a in body_neg}
-            ),
+            _ids({enc.fact(a) for a in body_pos} | {enc.comp(a) for a in body_neg}),
         )
         for head, body_pos, body_neg in resolved_axioms
     )
@@ -757,11 +854,21 @@ def ground(domain: Domain, problem: Problem) -> Task:
         direction, expression = problem.metric
         metric = f"{direction} {expression}"
 
+    # Before Task(...): encoding a derived atom no rule produces adds a name,
+    # and `facts` below must already include it.
+    derived_complements = tuple(
+        sorted(
+            (enc.fact(atom), enc.comp(atom))
+            for atom in tracked_neg
+            if atom.predicate in derived_preds
+        )
+    )
+
     return Task(
         name=problem.name or domain.name,
         facts=tuple(enc.names),
-        init=frozenset(init_ids),
-        goals=frozenset(goals),
+        init=_ids(init_ids),
+        goals=_ids(goals),
         operators=tuple(operators),
         metric_cost=problem.metric_minimize_cost,
         axioms=axioms,
@@ -773,6 +880,7 @@ def ground(domain: Domain, problem: Problem) -> Task:
         metric=metric,
         requirements=requirements,
         synthetic=frozenset(synthetic),
+        derived_complements=derived_complements,
     )
 
 

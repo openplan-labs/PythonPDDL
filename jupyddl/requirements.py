@@ -163,16 +163,23 @@ REQUIREMENTS = {
             "2.2",
             NATIVE,
             "`(:derived ...)` axioms.",
-            "Rules are grounded and evaluated to a least fixpoint after every "
-            "state change, so planners and heuristics always see closed states. "
-            "Derived predicates may not appear in action effects.",
+            "Rules are grounded and re-evaluated from scratch to a least "
+            "fixpoint after every state change, so planners and heuristics "
+            "always see closed states and a derived fact whose support goes "
+            "away is retracted. Negating a derived predicate in a precondition "
+            "or goal is supported; negating one inside another rule, which "
+            "needs stratification, is refused. Derived predicates may not "
+            "appear in action effects.",
         ),
         _r(
             ":action-costs",
             "3.0",
             NATIVE,
             "`(increase (total-cost) k)` and metric minimisation.",
-            "Operator costs feed straight into g, so A*/Dijkstra optimise cost.",
+            "Operator costs feed straight into g, so A*/Dijkstra optimise "
+            "cost. Under a metric over `(total-cost)` an action with no cost "
+            "effect is free, as in IPC planners; without a metric every action "
+            "costs 1. A cost inside `when` and a negative cost are refused.",
         ),
         _r(
             ":numeric-fluents",

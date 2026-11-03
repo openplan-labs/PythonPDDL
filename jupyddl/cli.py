@@ -196,7 +196,7 @@ def _observers(args):
 
 def _cmd_solve(args) -> int:
     task = build_task(args.domain, args.problem)
-    heuristic = None if args.heuristic == "none" else args.heuristic
+    heuristic = args.heuristic  # "none" is resolved by solve_task
     kwargs = {"weight": args.weight} if args.search == "wastar" else {}
     observer, recorder = _observers(args)
     result = solve_task(
@@ -297,8 +297,7 @@ def _cmd_animate(args) -> int:
     from .viz import animate_search
 
     task = build_task(args.domain, args.problem)
-    heuristic = None if args.heuristic == "none" else args.heuristic
-    _, trace = trace_search(task, args.search, heuristic)
+    _, trace = trace_search(task, args.search, args.heuristic)
     animate_search(
         trace, args.output, dark=args.dark, fps=args.fps, seconds=args.seconds
     )

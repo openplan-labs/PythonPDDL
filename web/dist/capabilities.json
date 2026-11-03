@@ -136,7 +136,7 @@
   {
    "implies": [],
    "name": ":action-costs",
-   "note": "Operator costs feed straight into g, so A*/Dijkstra optimise cost.",
+   "note": "Operator costs feed straight into g, so A*/Dijkstra optimise cost. Under a metric over `(total-cost)` an action with no cost effect is free, as in IPC planners; without a metric every action costs 1. A cost inside `when` and a negative cost are refused.",
    "pddl": "3.0",
    "summary": "`(increase (total-cost) k)` and metric minimisation.",
    "support": "native"
@@ -152,7 +152,7 @@
   {
    "implies": [],
    "name": ":derived-predicates",
-   "note": "Rules are grounded and evaluated to a least fixpoint after every state change, so planners and heuristics always see closed states. Derived predicates may not appear in action effects.",
+   "note": "Rules are grounded and re-evaluated from scratch to a least fixpoint after every state change, so planners and heuristics always see closed states and a derived fact whose support goes away is retracted. Negating a derived predicate in a precondition or goal is supported; negating one inside another rule, which needs stratification, is refused. Derived predicates may not appear in action effects.",
    "pddl": "2.2",
    "summary": "`(:derived ...)` axioms.",
    "support": "native"

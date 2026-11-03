@@ -30,11 +30,22 @@ def solve_task(
     search as it runs. ``max_expansions`` and ``time_limit`` bound the run; when
     either is hit the planner stops and sets ``result.truncated``, so an empty
     result means "gave up", not "proved unsolvable".
+
+    A planner that needs a heuristic and is not given one gets ``lmcut`` if it
+    is optimal (so the default keeps the guarantee) and ``hff`` otherwise.
+    ``heuristic="none"`` asks for no guidance at all, which for a planner that
+    needs a heuristic means ``blind``.
     """
     planner = make_planner(search, **planner_kwargs)
     heur = None
-    name = heuristic if heuristic else ("hff" if planner.requires_heuristic else None)
-    if name is not None:
+    name = heuristic
+    if name == "none":
+        name = "blind" if planner.requires_heuristic else None
+    elif not name and planner.requires_heuristic:
+        # An optimal planner gets an admissible default: hff would quietly
+        # cost it its guarantee.
+        name = "lmcut" if planner.optimal else "hff"
+    if name:
         heur = make_heuristic(name, task)
     budget = make_budget(max_expansions, time_limit)
     return planner.search(task, heur, observer=observer, budget=budget)

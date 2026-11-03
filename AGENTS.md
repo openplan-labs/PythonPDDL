@@ -115,8 +115,9 @@ Everything `compile.py` introduces is named with a leading `__`, and grounding
 collects those into `Task.synthetic` so `Task.visible_plan` can hide them. Two
 traps worth knowing:
 
-- **Synthetic actions must declare a zero cost.** Grounding charges 1 for any
-  action with no cost effect, which silently inflates the metric — closing a
+- **Synthetic actions must declare a zero cost.** Without a `(total-cost)`
+  metric, grounding charges 1 for any action with no cost effect (under one, 0,
+  as IPC planners do), which would silently inflate the metric — closing a
   plan or observing a constraint is bookkeeping, not work.
 - **Forced vs optional monitors.** `sometime` can use an action the planner
   applies when convenient; `at-most-once` and `sometime-after` cannot, because
@@ -162,8 +163,18 @@ planners must go through the task rather than the operator to honour them:
 - **Conditional effects (`flip`, `elevator`)**: the delete-relaxation heuristics
   (`hadd`, `hff`, `lmcut`, `h^m`) are *not guaranteed admissible* on domains with
   conditional effects because each conditional effect is relaxed into its own
-  operator. For guaranteed-optimal plans there use `bfs`, `dijkstra`, or
-  `astar`/`idastar` with the `blind` heuristic. Optimality tests use these.
+  operator. `lmcut` and `h2` clear their `admissible` flag on such tasks. For
+  guaranteed-optimal plans there use `dijkstra`, or `astar`/`idastar` with the
+  `blind` heuristic. Optimality tests use these.
+- **Fact ids are assigned in sorted order** and every id set is built sorted
+  (`grounding._ids`). A set of ints iterates in insertion order where ids share
+  a hash slot, so filling one while walking atoms in hash order made LM-cut's
+  tie-breaks — and so expansions and plans — depend on `PYTHONHASHSEED`.
+  `tests/test_semantics.py` runs a search under three seeds to pin this.
+- **`validate_plan` replays through `Task.apply`**, so it cannot catch a
+  semantics bug in the task itself. `tests/test_semantics.py` pins semantics
+  on tiny hand-written tasks whose answer is obvious by inspection — add a case
+  there when you change grounding, axioms, complements or costs.
 - **Matplotlib is optional**: only `jupyddl.viz` and `jupyddl.benchmark.plot_summary`
   need it; run headless with `MPLBACKEND=Agg` if no display (`jupyddl.viz` already
   forces the Agg backend).

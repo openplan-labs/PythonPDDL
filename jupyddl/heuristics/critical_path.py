@@ -2,7 +2,12 @@
 
 ``h^m`` estimates the cost of the most expensive size-``m`` subset of atoms.
 ``h^1`` equals ``h_max``; higher ``m`` is more informative but costs more.
-All ``h^m`` are admissible.
+
+This computes ``h^m`` over the *delete relaxation*, as the relaxation
+heuristics here do: it is admissible on tasks without conditional effects, but
+it cannot see mutexes the way Haslum and Geffner's full ``h^m`` does.
+With conditional effects and ``m >= 2`` it can overestimate, and the
+instance's ``admissible`` flag says so.
 """
 
 from __future__ import annotations
@@ -10,6 +15,7 @@ from __future__ import annotations
 import math
 from itertools import combinations
 
+from ..task import facts_of
 from .base import Heuristic
 
 
@@ -22,6 +28,8 @@ class CriticalPathHeuristic(Heuristic):
         self.m = m
         self.goal = task.goals
         self.ops = list(task.relaxed_operators())  # (pre, add, cost)
+        if m >= 2 and task.has_conditional_effects:
+            self.admissible = False
 
     def __call__(self, state) -> float:
         return self._hm(state)
@@ -29,6 +37,7 @@ class CriticalPathHeuristic(Heuristic):
     def _hm(self, state) -> float:
         m = self.m
         inf = math.inf
+        state = facts_of(state)
         atoms = set(state) | set(self.goal)
         for pre, add, _ in self.ops:
             atoms |= pre

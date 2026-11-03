@@ -505,9 +505,9 @@ jupyddl requirements --verbose  # with the full compilation notes
 
 | Requirement | PDDL | Support | What jupyddl does |
 |---|---|---|---|
-| `:action-costs` | 3.0 | **native** | `(increase (total-cost) k)` and metric minimisation. Operator costs feed straight into g, so A*/Dijkstra optimise cost. |
+| `:action-costs` | 3.0 | **native** | `(increase (total-cost) k)` and metric minimisation. Operator costs feed straight into g, so A*/Dijkstra optimise cost. Under a metric over `(total-cost)` an action with no cost effect is free, as in IPC planners; without a metric every action costs 1. A cost inside `when` and a negative cost are refused. |
 | `:conditional-effects` | 1.2 | **native** | `when` and `forall` inside effects. Kept explicitly in the grounded operator and evaluated against the state at application time. |
-| `:derived-predicates` | 2.2 | **native** | `(:derived ...)` axioms. Rules are grounded and evaluated to a least fixpoint after every state change, so planners and heuristics always see closed states. Derived predicates may not appear in action effects. |
+| `:derived-predicates` | 2.2 | **native** | `(:derived ...)` axioms. Rules are grounded and re-evaluated from scratch to a least fixpoint after every state change, so planners and heuristics always see closed states and a derived fact whose support goes away is retracted. Negating a derived predicate in a precondition or goal is supported; negating one inside another rule, which needs stratification, is refused. Derived predicates may not appear in action effects. |
 | `:equality` | 1.2 | **native** | `=` between terms. Evaluated during grounding; infeasible instances are dropped. |
 | `:strips` | 1.2 | **native** | Add/delete effects over positive literals. The core representation. Everything else compiles down to this. |
 | `:typing` | 1.2 | **native** | Typed parameters and objects, with type hierarchies. Subtypes are resolved transitively when building the object pools. |

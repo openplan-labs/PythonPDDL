@@ -55,6 +55,44 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.github/` or `docs/`, so filing them under `.docs/` would have silently
   dropped the contributing link on the issue and pull-request forms.
 
+### Fixed
+Wrong answers from the task model and the heuristics. Each of these returned a
+plan, a cost or a value without complaint, and `validate_plan` accepted the
+plans because it replays them through the same model. They are now pinned by
+`tests/test_semantics.py` on tiny tasks whose right answer is obvious.
+
+- **Derived facts were never retracted.** An action that deleted the support of
+  a derived fact left it true, and `(not <derived>)` held from the initial state
+  on. Axioms are now recomputed from scratch after every step, and a negated
+  derived fact is maintained with them. Negating a derived predicate *inside
+  another rule* needs stratification and is now refused by name.
+- **An atom both added and deleted left its complement true as well**, so
+  `(not (at a))` and `(at a)` could hold together, and a `when` that re-added a
+  deleted atom did the same. For complement facts the delete now wins.
+- **Action costs.** Under a `(total-cost)` metric an action with no cost effect
+  now costs 0, as in IPC planners, rather than 1 — on pegsol and sokoban the
+  "optimal" planners were optimising the wrong objective. A cost inside `when`
+  was charged whether or not the condition held; it is now refused, as is a
+  negative cost.
+- **A numeric fluent that is never defined read as 0**, so `(distance a c)` for
+  a road that does not exist cost nothing. Conditions and effects reading one
+  now fail, as PDDL 2.1 specifies.
+- **`blind` was not admissible** when any action is free, which every PDDL 3
+  compilation introduces, so `astar`+`blind` could return a costlier plan.
+- **`h1`/`h2`/`hm` crashed on every numeric or timed task**, and **LM-cut
+  crashed on an empty goal**, which made the default `solve()` crash too.
+- **`lmcut` and `h2` claimed admissibility on tasks with conditional effects**,
+  where they can overestimate. The instance flag now says so.
+- **`solve_task(task, "astar")` used `hff`**, which is not admissible, so the
+  default A* was not optimal. Optimal planners now default to `lmcut`. `-H none`
+  also fell through to `hff`; it now means `blind`.
+- **`make_heuristic(LMCutHeuristic, task)` returned the class unbuilt**, and the
+  planner then crashed calling it on a state. Classes and partials are now built.
+- **Results depended on `PYTHONHASHSEED`.** Fact ids followed string hashing,
+  so LM-cut broke ties differently in every process: gripper with `astar`/`lmcut`
+  expanded 1725, 1758 or 1760 nodes and returned different plans. Ids are now
+  assigned in sorted order, so a benchmark reproduces.
+
 ## [2.4.0]
 
 ### Added
