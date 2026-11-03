@@ -61,6 +61,29 @@ def task_from_state(task, state):
     return _replace(task, init=facts_of(state), init_values=values_of(state))
 
 
+def instance_family(name: str) -> str:
+    """The instance a sample belongs to, ignoring the stage that labelled it.
+
+    >>> instance_family("blocksworld-05-1#dagger2")
+    'blocksworld-05-1'
+    """
+    return name.split("#", 1)[0]
+
+
+def _random_split(items, validation: float, rng):
+    """``items`` shuffled into a training share and a held-out remainder."""
+    if not items:
+        return [], []
+    order = list(range(len(items)))
+    rng.shuffle(order)
+    cut = max(1, int(len(order) * (1 - validation)))
+    keep = set(order[:cut])
+    return (
+        [item for i, item in enumerate(items) if i in keep],
+        [item for i, item in enumerate(items) if i not in keep],
+    )
+
+
 @dataclass
 class Sample:
     """One state, its feature vector, and the cost-to-go we believe it has."""
@@ -81,6 +104,10 @@ class RankingGroup:
     to travel with the vector because the comparison GBFS makes at expansion
     time is between ``h(s')`` values, but the comparison that is *correct* is
     between ``c(s, s') + h*(s')`` — with non-uniform action costs those differ.
+
+    :func:`samples_from_plan` leaves out any sibling whose features and step
+    cost equal the chosen successor's: no model can rank the pair, so it is
+    not evidence of anything.
     """
 
     chosen: tuple
@@ -112,30 +139,42 @@ class Corpus:
         on the same plan have nearly identical features and nearly identical
         targets; splitting at random puts one in train and one in validation
         and reports a validation score that measures memorisation.
+
+        An instance is its name up to the first ``#``. DAgger and bootstrapping
+        file the states they label under ``X#dagger1``, ``X#boot2`` and so on,
+        and those lie on and around ``X``'s own plan: keyed on the full name,
+        ``X`` could train while ``X#dagger1`` validated.
+
+        Ranking groups are split with their samples, so the held-out side has
+        both and ranking accuracy can be measured on instances training never
+        saw. Dropping them — what this used to do — left nothing to measure
+        top-1 on but the training groups.
         """
-        instances = sorted({s.instance for s in self.samples})
+        instances = sorted({instance_family(s.instance) for s in self.samples})
         if len(instances) < 2:
-            # Nothing to hold out by instance; fall back to a sample split and
+            # Nothing to hold out by instance; fall back to a random split and
             # accept that the score is optimistic.
             rng = random.Random(seed)
-            order = list(range(len(self.samples)))
-            rng.shuffle(order)
-            cut = max(1, int(len(order) * (1 - validation)))
-            train_idx = set(order[:cut])
-            train = [s for i, s in enumerate(self.samples) if i in train_idx]
-            val = [s for i, s in enumerate(self.samples) if i not in train_idx]
+            train, val = _random_split(self.samples, validation, rng)
+            train_groups, val_groups = _random_split(self.groups, validation, rng)
             return (
-                Corpus(self.space, train, self.groups),
-                Corpus(self.space, val, []),
+                Corpus(self.space, train, train_groups),
+                Corpus(self.space, val, val_groups),
             )
         rng = random.Random(seed)
         rng.shuffle(instances)
         cut = max(1, int(len(instances) * (1 - validation)))
         held = set(instances[cut:])
-        train = [s for s in self.samples if s.instance not in held]
-        val = [s for s in self.samples if s.instance in held]
-        groups = [g for g in self.groups if g.instance not in held]
-        return Corpus(self.space, train, groups), Corpus(self.space, val, [])
+        train = [s for s in self.samples if instance_family(s.instance) not in held]
+        val = [s for s in self.samples if instance_family(s.instance) in held]
+        train_groups = [
+            g for g in self.groups if instance_family(g.instance) not in held
+        ]
+        val_groups = [g for g in self.groups if instance_family(g.instance) in held]
+        return (
+            Corpus(self.space, train, train_groups),
+            Corpus(self.space, val, val_groups),
+        )
 
     def target_stats(self) -> dict:
         if not self.samples:
@@ -261,20 +300,22 @@ def samples_from_plan(
                 successor = task.apply(other, state)
                 if facts_of(successor) == facts_of(states[i + 1]):
                     continue  # a different operator reaching the same state
-                siblings.append((successor, float(other.cost)))
+                sibling = (bound(successor), float(other.cost))
+                if sibling == chosen:
+                    # A different state the features cannot tell apart, at the
+                    # same step cost — gripper's two grippers, say. No model
+                    # over these features can put one ahead of the other, so
+                    # the pair teaches nothing, and kept it let a tie count as
+                    # a correct ranking.
+                    continue
+                siblings.append(sibling)
             if not siblings:
                 continue
             # A branching factor in the hundreds would make the ranking loss
             # dominate the epoch; a sample of the siblings carries the signal.
             if len(siblings) > max_siblings:
                 siblings = rng.sample(siblings, max_siblings)
-            groups.append(
-                RankingGroup(
-                    chosen,
-                    [(bound(s), c) for s, c in siblings],
-                    instance,
-                )
-            )
+            groups.append(RankingGroup(chosen, siblings, instance))
     return samples, groups
 
 

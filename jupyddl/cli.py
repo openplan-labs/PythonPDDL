@@ -557,11 +557,22 @@ def _cmd_learn(args) -> int:
     )
     print(f"  parameters {bundle.model.num_parameters}")
     metrics = bundle.metrics
-    print(
-        f"  held out   MAE {metrics.get('mae', 0):.2f}"
-        f"  top-1 {metrics.get('top1', 0):.3f}"
-        f"  over {metrics.get('held_out_instances', 0)} instances"
-    )
+    # Say "held out" only of what was: a corpus of one instance, or held-out
+    # instances whose plans never branched, leave nothing but training data.
+    held = metrics.get("held_out_instances", 0)
+    if held:
+        print(f"  held out   MAE {metrics.get('mae', 0):.2f} over {held} instances")
+    else:
+        print(f"  training   MAE {metrics.get('mae', 0):.2f} (nothing was held out)")
+    if "top1" not in metrics:
+        print("  top-1      n/a (the corpus has no ranking groups)")
+    else:
+        where = (
+            "held out"
+            if metrics.get("ranking_held_out")
+            else "on training groups; none were held out"
+        )
+        print(f"  top-1      {metrics['top1']:.3f} ({where})")
     print(f"\nUse it:\n  jupyddl solve <domain> <problem> -s gbfs -H learned:{output}")
 
     if args.evaluate:
@@ -577,10 +588,17 @@ def _cmd_learn(args) -> int:
         )
         for name in ["learned"] + [k for k in summary if k != "learned"]:
             agg = summary[name]
+            cost = "—" if agg["mean_cost"] is None else f"{agg['mean_cost']:.1f}"
             print(
                 f"  {name:<12}{agg['coverage']:>10.2f}{agg['mean_expanded']:>12.0f}"
-                f"{agg['mean_seconds']:>10.3f}{agg['mean_cost']:>8.1f}"
+                f"{agg['mean_seconds']:>10.3f}{cost:>8}"
             )
+        common = summary["learned"]["common"]
+        print(
+            "  expanded and seconds are over every instance, an unsolved one "
+            "charged double;\n"
+            f"  cost is over the {common} solved by every heuristic that solved any"
+        )
     return 0
 
 
@@ -740,11 +758,13 @@ def _print_stats(result) -> None:
 
 
 def _print_summary(summary) -> None:
-    print(f"{'config':<20}{'coverage':>12}{'expanded':>12}{'runtime(s)':>12}")
-    print("-" * 56)
+    # A label carries its planner arguments now, so it can outgrow a fixed column.
+    width = max([20] + [len(key) + 2 for key in summary])
+    print(f"{'config':<{width}}{'coverage':>12}{'expanded':>12}{'runtime(s)':>12}")
+    print("-" * (width + 36))
     for key, agg in summary.items():
         cov = f"{agg['coverage']}/{agg['instances']}"
-        print(f"{key:<20}{cov:>12}{agg['expanded']:>12}{agg['runtime']:>12.3f}")
+        print(f"{key:<{width}}{cov:>12}{agg['expanded']:>12}{agg['runtime']:>12.3f}")
 
 
 def main(argv=None) -> int:

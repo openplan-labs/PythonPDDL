@@ -96,7 +96,10 @@ means nothing. `rank_weight=0.8` splits the objective; 0.8 is a reasonable
 default, not a tuned optimum.
 
 The metric we select checkpoints on is **top-1 ranking accuracy**, not
-validation MAE, for the same reason.
+validation MAE, for the same reason. It is measured on the held-out instances,
+and a tie with `k` siblings earns `1/(k+1)` — its chance of winning a random
+tie-break — so a model that scores every state alike rates as guessing, not as
+perfect.
 
 ### Not admissible, and it does not pretend to be
 
@@ -112,7 +115,8 @@ become unsound.
 Train on a small ladder, test on instances two to three times larger with
 different seeds. Planner is `gbfs` throughout, budget 30 000 expansions /
 30 s. Coverage is the fraction solved; expansions and seconds are means over
-solved instances.
+solved instances — a convention that flatters low coverage, and that the code
+no longer uses (see [Corrections, 2026-11-03](#corrections-2026-11-03)).
 
 ### blocksworld — trained on 3–6 blocks, tested on 9–13
 
@@ -126,8 +130,8 @@ solved instances.
 
 Against `hff`: **3.8× fewer expansions, 15× faster, and slightly cheaper plans.**
 Corpus construction took 0.5 s, training 0.1 s, search-cost tuning about 50 s.
-Held-out MAE 0.92, top-1 accuracy 0.923. The model has 1025 parameters over 14
-features.
+Held-out MAE 0.92, top-1 accuracy 0.923 (the top-1 was not held out; see the
+corrections below). The model has 1025 parameters over 14 features.
 
 The tuned row is what this prints, end to end, in about a minute:
 
@@ -161,7 +165,8 @@ a correction to an earlier claim about *why* the tuned model is better, are in
 The cleanest win: half the expansions of `hff`, 5.6× faster, and *better plans*.
 Top-1 accuracy 1.000 — gripper's structure is almost entirely captured by "how
 many balls are still in the wrong room", which is exactly what these features
-encode.
+encode. (As measured here that 1.000 was not evidence of anything, and this
+table was built from duplicated instances; see the corrections below.)
 
 Note `blind`'s plan cost of 25.0, the lowest in the table. It solved only 40% of
 the instances and its search is effectively breadth-first on those, so it finds
@@ -179,6 +184,63 @@ first column.
 
 **A clear loss.** `hff` expands 6× fewer nodes and finds plans 42% cheaper. The
 learned heuristic beats `goalcount` and nothing else.
+
+### Corrections, 2026-11-03
+
+A review of `jupyddl.learn` found bugs that touched figures on this page. The
+figures above are left exactly as measured — they match
+`.docs/assets/rl-data.json`, the Research view and the video — and this is what
+each one actually measured.
+
+- **Top-1 accuracy was neither held out nor tie-safe.** It was computed over
+  every ranking group in the corpus, training instances included, while
+  `jupyddl learn` printed it as held out; and a sibling that scored level with
+  the successor the plan took counted as a correct ranking. Checkpoint
+  selection read the same number. The tie rule can only push it up, and
+  training groups usually do. Re-run with the fix — same corpora, seeds and 60
+  epochs, top-1 over the held-out instances' groups only, a tie with `k`
+  siblings credited `1/(k+1)` — which takes seconds:
+
+  | | published | re-measured | held-out groups |
+  |---|---|---|---|
+  | blocksworld | 0.923 | 0.929 | 28 of 101 |
+  | logistics | 0.656 | 0.667 | 42 of 157 |
+  | gripper, old generator, two seeds per size | 1.000 | 1.000 | 30 of 80 |
+
+  The old code reproduces each published figure on these corpora. Gripper's
+  protocol is not recorded beyond the sizes, so its row uses `jupyddl learn`'s
+  default of two seeds per size.
+
+  The values barely move, but the checkpoint does: blocksworld now keeps epoch
+  12 rather than 20, and its held-out MAE is 1.16 rather than 0.92; logistics
+  keeps epoch 22 rather than 9. **Every other learned-heuristic figure on this
+  page and in [rl-for-search.md](rl-for-search.md) was measured on the
+  checkpoint the old rule kept.** They are true of that model; the fixed code
+  trains a different one, and none of them has been re-measured.
+- **Gripper's 1.000 could not have come out any other way.** In that corpus, 59
+  of the 80 groups held a sibling identical in features and step cost to the
+  successor taken — picking a ball up with the other hand gives a different
+  state that the features cannot tell apart — so a model that outputs a
+  constant also scored 1.000. Worse, the gripper generator ignored its seed:
+  the "held-out" instances were copies of training ones, and since `--evaluate`
+  draws two seeds per size, the ten test instances in the table were five,
+  each counted twice. The means are unchanged by that, but rest on half the
+  sample claimed; a `--cem` run on gripper would also have tuned and selected
+  on identical instances. With identical siblings dropped, top-1 is still 1.000
+  on the old instances and on 27 groups of genuinely unseen ones from the
+  fixed generator, so the claim survives; the published number was simply not
+  evidence for it. The table cannot be re-run as it stands, because the same
+  command now generates different instances.
+- **Means over solved runs flattered low coverage.** The imitation-only
+  blocksworld row's 366 averages the nine instances it solved and drops the one
+  it could not finish in 30 000 expansions; its plan cost of 49.1 is over the
+  same nine. Charging that failure as `search_cost` does, at twice the budget,
+  its mean is 6 329. On the nine instances every configuration solved, the
+  tuned model averages 129, not 137 — computed from the per-instance table in
+  [rl-for-search.md](rl-for-search.md). `blind`'s 20 198 on gripper is the same
+  flattery, a mean over the instances it happened to solve; not re-measured.
+  `summarise_transfer` now charges failures that way and reports plan cost
+  only over instances every configuration with any coverage solved.
 
 ## Why logistics fails, precisely
 

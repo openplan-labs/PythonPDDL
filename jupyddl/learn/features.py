@@ -37,10 +37,16 @@ __all__ = ["FeatureSpace", "predicate_of"]
 # atom its own slot, and the feature vector stops being size-invariant while
 # still looking perfectly reasonable.
 _SYMBOL = re.compile(r"^\(?\s*([^\s()]+)")
+# Grounding adds a complement fact ``(not (p a))`` for each atom a negative
+# precondition reads. Through ``_SYMBOL`` alone they all key on ``not``, which
+# puts the negation of every predicate in the domain into one slot.
+_NEGATED = re.compile(r"^\(\s*not\s*\(\s*([^\s()]+)")
 
 
 def predicate_of(fact_name: str) -> str:
     """The predicate symbol of a grounded fact string.
+
+    A complement fact keys on the predicate it negates, prefixed ``not-``.
 
     >>> predicate_of("(on b1 b2)")
     'on'
@@ -48,7 +54,12 @@ def predicate_of(fact_name: str) -> str:
     'handempty'
     >>> predicate_of("move(a,b)")
     'move'
+    >>> predicate_of("(not (sampled wp1))")
+    'not-sampled'
     """
+    negated = _NEGATED.match(fact_name)
+    if negated:
+        return "not-" + negated.group(1)
     match = _SYMBOL.match(fact_name)
     if not match:
         return fact_name

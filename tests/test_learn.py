@@ -72,6 +72,10 @@ def corpus(ladder, space):
         ("(at truck1 loc2)", "at"),
         ("move(a,b)#2", "move"),
         ("__closed", "__closed"),
+        # Complement facts, which grounding adds for negative preconditions.
+        ("(not (on b1 b2))", "not-on"),
+        ("(not (handempty))", "not-handempty"),
+        ("( not ( sampled wp1 ) )", "not-sampled"),
     ],
 )
 def test_predicate_symbols_are_extracted_from_both_spellings(fact, symbol):
@@ -81,6 +85,32 @@ def test_predicate_symbols_are_extracted_from_both_spellings(fact, symbol):
     vocabulary slot, and the feature vector quietly stops being size-invariant.
     """
     assert predicate_of(fact) == symbol
+
+
+def test_each_negated_predicate_gets_its_own_slot():
+    """``(not (p o1))`` and ``(not (q o1))`` used to share one slot, ``not``,
+    so a feature counted the negations of every predicate in the domain at
+    once and could not say which ones held."""
+    from jupyddl.grounding import ground
+    from jupyddl.parser import parse
+
+    domain = """(define (domain d) (:requirements :strips :negative-preconditions)
+      (:predicates (p ?x) (q ?x) (done))
+      (:action a :parameters (?x) :precondition (not (p ?x)) :effect (p ?x))
+      (:action b :parameters (?x) :precondition (not (q ?x)) :effect (q ?x))
+      (:action c :parameters () :precondition (and (p o1) (q o2))
+                 :effect (done)))"""
+    problem = """(define (problem pr) (:domain d) (:objects o1 o2)
+      (:init (p o1)) (:goal (done)))"""
+    task = ground(parse(domain), parse(problem))
+    space = FeatureSpace.from_task(task)
+    assert "not" not in space.vocabulary
+    assert {"not-p", "not-q"} <= set(space.vocabulary)
+
+    values = dict(zip(space.names(), space.bind(task)(task.initial_state())))
+    # (p o1) holds, so half of p's complements do; none of q's atoms hold.
+    assert values["true:not-p"] == pytest.approx(0.5)
+    assert values["true:not-q"] == pytest.approx(1.0)
 
 
 def test_vocabulary_is_predicates_not_atoms(space):
@@ -209,6 +239,22 @@ def test_set_flat_rejects_the_wrong_length():
     model = MLP([3, 2, 1], seed=0)
     with pytest.raises(ValueError):
         model.set_flat([0.0])
+
+
+@pytest.mark.parametrize("delta", [-10, -1, 1])
+def test_a_rejected_set_flat_leaves_the_model_untouched(delta):
+    """It used to write row by row and count afterwards, so a short vector
+    truncated the rows of a model the caller still held — and the error then
+    reported the already-damaged parameter count."""
+    model = MLP([3, 2, 1], seed=0)
+    before = model.get_flat()
+    prediction = model([1.0, -1.0, 0.5])
+    wrong = before + [5.0] if delta > 0 else before[:delta]
+    with pytest.raises(ValueError, match=f"expected 11 parameters, got {len(wrong)}"):
+        model.set_flat(wrong)
+    assert model.get_flat() == before
+    assert model.num_parameters == 11
+    assert model([1.0, -1.0, 0.5]) == prediction
 
 
 def test_adam_reduces_a_loss_it_can_reach():
@@ -344,6 +390,157 @@ def test_training_refuses_an_empty_corpus(space):
         train(Corpus(space), TrainConfig(epochs=1))
 
 
+def test_pure_ranking_without_groups_is_refused(ladder, space):
+    """Every gradient is zero, so this used to return the random
+    initialisation, selected at epoch 1, as a trained model."""
+    flat = solved_corpus(ladder, space=space, ranking=False, time_limit=20.0)
+    assert flat.samples and not flat.groups
+    with pytest.raises(ValueError, match="ranking groups"):
+        train(flat, TrainConfig(epochs=3, rank_weight=1.0, seed=0))
+    # With any weight on regression there is still something to learn.
+    bundle, _ = train(flat, TrainConfig(epochs=3, rank_weight=0.5, seed=0))
+    assert bundle.model.get_flat() != MLP(bundle.model.sizes, seed=0).get_flat()
+
+
+# --------------------------------------------------------------------------
+# ranking accuracy: ties, and what "held out" means
+# --------------------------------------------------------------------------
+@pytest.fixture(params=["python", "numpy"])
+def forward_path(request, monkeypatch):
+    """Run a test once on the reference path and once on the NumPy one."""
+    from jupyddl.learn import model as model_module
+
+    if request.param == "numpy":
+        if not numpy_available():
+            pytest.skip("numpy is not installed")
+    else:
+        monkeypatch.setattr(model_module, "_np", None)
+    return request.param
+
+
+def _constant_model(size):
+    model = MLP([size, 4, 1], seed=0)
+    model.set_flat([0.0] * model.num_parameters)
+    return model
+
+
+def test_a_constant_model_ranks_at_chance_not_perfectly(corpus, forward_path):
+    """Ties used to count as hits, so a model that outputs one number for
+    every state scored top-1 = 1.0 — and checkpoint selection, which reads
+    that score, preferred a collapsed epoch to a trained one."""
+    # Blocksworld actions all cost 1, so a constant output leaves every
+    # sibling level with the successor the plan took.
+    assert all(c == g.chosen[1] for g in corpus.groups for _, c in g.others)
+    model = _constant_model(corpus.space.size)
+    metrics = evaluate_ranking(model, corpus.groups, 1.0)
+    chance = sum(1 / (len(g.others) + 1) for g in corpus.groups) / len(corpus.groups)
+    assert metrics["top1"] == pytest.approx(chance)
+    assert metrics["top1"] < 0.6
+    assert metrics["in_top2"] >= metrics["top1"]
+
+
+def test_ties_earn_partial_credit(forward_path):
+    from jupyddl.learn.dataset import RankingGroup
+
+    model = _constant_model(2)  # every state scores the same; step costs decide
+    a, b, c = [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]
+    groups = [
+        RankingGroup((a, 1.0), [(b, 1.0)]),  # one tie: half a hit
+        RankingGroup((a, 1.0), [(b, 1.0), (c, 1.0)]),  # two ties: a third
+        RankingGroup((a, 1.0), [(b, 2.0)]),  # strictly best: a hit
+        RankingGroup((a, 2.0), [(b, 1.0), (c, 2.0)]),  # one better, one tie
+        RankingGroup((a, 3.0), [(b, 1.0), (c, 2.0)]),  # third: nothing
+    ]
+    metrics = evaluate_ranking(model, groups, 1.0)
+    assert metrics["top1"] == pytest.approx((1 / 2 + 1 / 3 + 1 + 0 + 0) / 5)
+    assert metrics["in_top2"] == pytest.approx((1 + 2 / 3 + 1 + 1 / 2 + 0) / 5)
+
+
+def test_both_forward_paths_rank_identically(corpus):
+    """A near-tie must not be a win on one path and a loss on the other."""
+    if not numpy_available():
+        pytest.skip("numpy is not installed")
+    from jupyddl.learn import model as model_module
+
+    bundle, _ = train(corpus, TrainConfig(epochs=10, seed=0))
+    fast = evaluate_ranking(bundle.model, corpus.groups, bundle.scale)
+    saved = model_module._np
+    model_module._np = None
+    try:
+        slow = evaluate_ranking(bundle.model, corpus.groups, bundle.scale)
+    finally:
+        model_module._np = saved
+    assert fast == slow
+
+
+def test_no_sibling_duplicates_the_chosen_successor():
+    """In gripper, picking a ball up with either hand gives two different
+    states the features cannot tell apart. Kept as a sibling, that pair is a
+    tie no model can break."""
+    tasks = tasks_from_generator("gripper", [3, 4], seed=0)
+    space = FeatureSpace.from_tasks(task for _, task in tasks)
+    gripper = solved_corpus(tasks, space=space, time_limit=20.0)
+    assert gripper.groups
+    for group in gripper.groups:
+        assert all(other != group.chosen for other in group.others)
+
+
+def test_split_holds_out_ranking_groups_with_their_instances(corpus):
+    """The held-out side used to get no groups at all, so the only top-1
+    there was to report was measured on training instances."""
+    from jupyddl.learn.dataset import instance_family
+
+    train_set, val_set = corpus.split(validation=0.34, seed=0)
+    assert val_set.groups, "held-out instances that branch must keep their groups"
+    held = {instance_family(s.instance) for s in val_set.samples}
+    assert {instance_family(g.instance) for g in val_set.groups} <= held
+    assert not {instance_family(g.instance) for g in train_set.groups} & held
+    assert len(train_set.groups) + len(val_set.groups) == len(corpus.groups)
+
+
+def test_reported_top1_is_measured_on_held_out_instances(corpus):
+    config = TrainConfig(epochs=15, seed=0, validation=0.34)
+    bundle, report = train(corpus, config)
+    _, val_set = corpus.split(config.validation, seed=config.seed)
+    held_out = evaluate_ranking(bundle.model, val_set.groups, bundle.scale)
+    assert bundle.metrics["ranking_held_out"] is True
+    assert bundle.metrics["top1"] == pytest.approx(held_out["top1"])
+    assert bundle.metrics["groups"] == len(val_set.groups) < len(corpus.groups)
+    assert "train_top1" in bundle.metrics
+    assert "val_top1" in report.history[0]
+
+
+def test_relabelled_states_stay_with_their_instance(space):
+    """DAgger and bootstrapping file states of ``X`` under ``X#dagger1``,
+    ``X#boot2``: splitting on the full name let ``X`` train while its own
+    relabelled states validated."""
+    from jupyddl.learn.dataset import RankingGroup, Sample, instance_family
+
+    names = []
+    for base in ("a", "b", "c", "d", "e", "f"):
+        names += [base, f"{base}#dagger1", f"{base}#dagger2", f"{base}#boot1"]
+    vector = [0.0] * space.size
+    mixed = Corpus(
+        space,
+        [Sample(vector, 1.0, True, name) for name in names],
+        [RankingGroup((vector, 1.0), [(vector, 2.0)], name) for name in names],
+    )
+    for seed in range(20):
+        train_set, val_set = mixed.split(validation=0.34, seed=seed)
+        trained = {instance_family(s.instance) for s in train_set.samples}
+        trained |= {instance_family(g.instance) for g in train_set.groups}
+        validated = {instance_family(s.instance) for s in val_set.samples}
+        validated |= {instance_family(g.instance) for g in val_set.groups}
+        assert validated and not trained & validated, seed
+
+
+def test_a_single_instance_is_not_reported_as_held_out(ladder, space):
+    one = solved_corpus(ladder[:1], space=space, time_limit=20.0)
+    bundle, _ = train(one, TrainConfig(epochs=3, seed=0))
+    assert bundle.metrics["held_out_instances"] == 0
+    assert bundle.metrics["ranking_held_out"] is False
+
+
 def test_training_is_deterministic_given_a_seed(corpus):
     a, _ = train(corpus, TrainConfig(epochs=10, seed=3))
     b, _ = train(corpus, TrainConfig(epochs=10, seed=3))
@@ -371,6 +568,106 @@ def test_a_future_format_is_refused_rather_than_misread(corpus, tmp_path):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="unsupported"):
         HeuristicBundle.load(str(path))
+
+
+def _break_width(d):
+    d["model"] = MLP([6, 3, 1], seed=0).to_dict()
+
+
+def _break_row(d):
+    d["model"]["weights"][0][0] = d["model"]["weights"][0][0][:2]
+
+
+def _lie_about_sizes(d):
+    d["model"]["sizes"] = [999, 1]
+
+
+def _lie_about_a_hidden_layer(d):
+    d["model"]["sizes"] = [8, 4, 1]
+
+
+def _nan_weight(d):
+    d["model"]["weights"][1][0][0] = float("nan")
+
+
+def _inf_bias(d):
+    d["model"]["biases"][0][1] = float("inf")
+
+
+def _text_weight(d):
+    d["model"]["weights"][0][1][2] = "0.5"
+
+
+def _short_bias(d):
+    d["model"]["biases"][1] = []
+
+
+def _no_biases(d):
+    del d["model"]["biases"]
+
+
+def _zero_scale(d):
+    d["scale"] = 0.0
+
+
+def _nan_scale(d):
+    d["scale"] = float("nan")
+
+
+def _repeated_symbol(d):
+    d["space"]["vocabulary"] = ["on", "on"]
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        _break_width,
+        _break_row,
+        _lie_about_sizes,
+        _lie_about_a_hidden_layer,
+        _nan_weight,
+        _inf_bias,
+        _text_weight,
+        _short_bias,
+        _no_biases,
+        _zero_scale,
+        _nan_scale,
+        _repeated_symbol,
+    ],
+)
+def test_a_malformed_bundle_is_refused_on_load(corrupt, tmp_path):
+    """Each of these used to load. The pure-Python forward pass ``zip``\\ s rows
+    against inputs and silently drops whatever is longer while the NumPy path
+    raises, so the same file gave a different heuristic depending on whether
+    NumPy was installed — and a non-finite value made every estimate ``nan``."""
+    bundle = HeuristicBundle(FeatureSpace(["clear", "on"]), MLP([8, 3, 1], seed=0))
+    data = bundle.to_dict()
+    HeuristicBundle.from_dict(json.loads(json.dumps(data)))  # the control loads
+    corrupt(data)
+    path = tmp_path / "broken.heur.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError):
+        HeuristicBundle.load(str(path))
+
+
+def test_a_mismatched_bundle_built_in_code_refuses_to_bind(ladder):
+    """The same check for a bundle that never went through a file."""
+    _, task = ladder[0]
+    space = FeatureSpace.from_task(task)
+    bundle = HeuristicBundle(space, MLP([space.size - 1, 3, 1], seed=0))
+    with pytest.raises(ValueError, match="inputs"):
+        bundle.bind(task)
+
+
+def test_mlp_refuses_parameters_that_do_not_fit_its_sizes():
+    good = MLP([3, 2, 1], seed=0)
+    assert MLP.from_dict(good.to_dict()).get_flat() == good.get_flat()
+    with pytest.raises(ValueError):
+        MLP([3, 2, 1], weights=good.weights)  # biases missing
+    with pytest.raises(ValueError):
+        MLP([3, 0, 1])
+    with pytest.raises(ValueError):
+        MLP([3.5, 1])
 
 
 def test_the_heuristic_scores_a_goal_state_zero(corpus, ladder):
@@ -639,6 +936,77 @@ def test_transfer_evaluation_reports_time_as_well_as_expansions(corpus, ladder):
     assert summary["learned"]["coverage"] == 1.0
 
 
+def _row(heuristic, instance, solved, expanded, cost=None, seconds=0.01, budget=1000):
+    return {
+        "instance": instance,
+        "heuristic": heuristic,
+        "solved": solved,
+        "cost": cost,
+        "expanded": expanded,
+        "evaluated": expanded,
+        "seconds": seconds,
+        "truncated": not solved,
+        "budget": budget,
+    }
+
+
+def test_transfer_summary_does_not_reward_giving_up():
+    """``quitter`` solves only the easy instance; ``finisher`` solves both.
+    Averaged over each one's own solved runs — what this used to do — the
+    quitter came out 26 times better."""
+    rows = [
+        _row("quitter", "easy", True, 10, cost=4, seconds=0.01),
+        _row("quitter", "hard", False, 1000, seconds=0.5),
+        _row("finisher", "easy", True, 20, cost=6, seconds=0.02),
+        _row("finisher", "hard", True, 500, cost=30, seconds=0.3),
+        _row("hopeless", "easy", False, 1000, seconds=0.4),
+        _row("hopeless", "hard", False, 1000, seconds=0.4),
+    ]
+    summary = summarise_transfer(rows)
+    quitter, finisher = summary["quitter"], summary["finisher"]
+    assert quitter["coverage"] == 0.5 and finisher["coverage"] == 1.0
+    assert quitter["mean_expanded"] > finisher["mean_expanded"]
+    # A failure is charged twice the budget, as search_cost charges it.
+    assert quitter["mean_expanded"] == pytest.approx((10 + 2 * 1000) / 2)
+    assert finisher["mean_expanded"] == pytest.approx((20 + 500) / 2)
+    assert quitter["mean_seconds"] > finisher["mean_seconds"]
+    # Plan cost compares only where everyone who solved anything solved:
+    # the configuration that solved nothing does not empty that set.
+    assert finisher["common"] == 1
+    assert quitter["mean_cost"] == 4 and finisher["mean_cost"] == 6
+    assert summary["hopeless"]["mean_cost"] is None
+    assert summary["hopeless"]["mean_expanded"] == pytest.approx(2000)
+
+
+def test_transfer_rows_record_the_budget(corpus, ladder):
+    bundle, _ = train(corpus, TrainConfig(epochs=5, seed=0))
+    rows = evaluate_transfer(bundle, ladder[:1], baselines=(), max_expansions=3)
+    assert rows[0]["budget"] == 3
+    if not rows[0]["solved"]:
+        charged = 2 * max(3, rows[0]["expanded"])
+        assert summarise_transfer(rows)["learned"]["mean_expanded"] == charged
+
+
+def test_learn_heuristic_accepts_a_one_shot_iterable_of_sizes():
+    """``sizes`` is read several times; a generator used to be spent by the
+    first read, so the ladder was recorded as ``[]`` and the default CEM sizes
+    (``max`` of it) raised."""
+    from jupyddl.learn import learn_heuristic
+
+    bundle = learn_heuristic(
+        "blocksworld",
+        sizes=(n for n in (3, 4)),
+        seeds_per_size=1,
+        train_config=TrainConfig(epochs=2, seed=0),
+        rl_config=RLConfig(max_expansions=50, seed=0),
+        cem_iterations=1,
+    )
+    pipeline = bundle.metrics["pipeline"]
+    assert pipeline["sizes"] == [3, 4]
+    assert pipeline["log"][0].endswith("sizes [3, 4]")
+    assert any("sizes [6, 7, 8, 9]" in line for line in pipeline["log"])
+
+
 def test_a_model_transfers_to_an_instance_far_larger_than_it_trained_on(corpus):
     """Not a quality claim — a claim that it runs at all, which is the thing
     a fixed-length one-hot encoding would have made impossible."""
@@ -651,3 +1019,25 @@ def test_a_model_transfers_to_an_instance_far_larger_than_it_trained_on(corpus):
     result = solve_task(big, "gbfs", heuristic, max_expansions=20000, time_limit=30)
     if result.solved:
         assert validate_plan(big, result.plan)
+
+
+def test_the_cli_says_held_out_only_of_what_was(tmp_path, capsys):
+    """With one instance nothing can be held out by instance; the command line
+    used to print the training figures under "held out" anyway."""
+    from jupyddl.cli import main
+
+    out = tmp_path / "one.heur.json"
+    args = ["learn", "blocksworld", "--sizes", "3", "--seeds-per-size", "1"]
+    assert main(args + ["--epochs", "2", "-o", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "nothing was held out" in printed
+    assert "held out   MAE" not in printed
+    assert "(held out)" not in printed
+
+    out = tmp_path / "ladder.heur.json"
+    args = ["learn", "blocksworld", "--sizes", "3-4", "--seeds-per-size", "3"]
+    assert main(args + ["--epochs", "2", "--evaluate", "4", "-o", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "held out   MAE" in printed
+    assert "(held out)" in printed
+    assert "an unsolved one charged double" in printed

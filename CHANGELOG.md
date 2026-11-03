@@ -141,6 +141,60 @@ plans because it replays them through the same model. They are now pinned by
 - `black` is pinned to one major version in both the dev extra and the
   `format` workflow, which installed whatever was newest; Renovate now pins
   third-party actions to commit digests.
+- **Learned-heuristic top-1 was neither held out nor tie-safe.** A sibling
+  scoring level with the successor the plan took counted as a correct ranking,
+  so a model that outputs a constant scored 1.000 — and checkpoint selection,
+  which reads top-1, could prefer a collapsed epoch. `Corpus.split` also gave
+  the held-out side no ranking groups, so the "held out" top-1 `jupyddl learn`
+  printed was measured over training instances. A tie with `k` siblings now
+  earns `1/(k+1)`, a sibling identical to the chosen successor in features and
+  step cost is not recorded at all, and selection and the reported top-1 use
+  the held-out groups. The published figures came from the old rule; see the
+  dated corrections in `.docs/learned-heuristics.md` and
+  `.docs/rl-for-search.md`.
+- **A DAgger or bootstrap state could validate against its own instance.**
+  `split` treated `X#dagger1` as an instance apart from `X`; it now groups on
+  the name before the `#`.
+- **`summarise_transfer` averaged each heuristic over the runs it solved**, so
+  one that solved only the easy instance looked many times better than one that
+  solved both. An unsolved run is now charged twice the budget, as
+  `search_cost` charges it, and plan cost compares only instances every
+  configuration with any coverage solved. The imitation-only blocksworld mean
+  the docs quote as 366 is 6 329 under that rule.
+- **A malformed learned heuristic loaded, then gave one answer with NumPy and
+  another without.** A network whose input width is not the feature vector's,
+  a ragged row, a `sizes` field that does not describe the weights, a
+  non-finite value or a non-positive scale is now a `ValueError` on load.
+  `MLP.set_flat` checks the length before writing anything, instead of leaving
+  a wrong-length vector half-applied.
+- **Every negated fact shared one feature, `not`.** Complement facts now key on
+  the predicate they negate (`not-sampled`), so rovers and workshop get a slot
+  per negated predicate. A model trained on a domain with negative
+  preconditions before this sees different features now; retrain it.
+- `train()` with a pure ranking objective and no ranking groups returned its
+  random initialisation as a trained model; it now raises. `learn_heuristic`
+  spent a generator passed as `sizes` on its first read, recording `[]` and
+  raising under `cem_iterations`; size arguments are now read once, on entry.
+- **`gripper` and `workshop` ignored their seed.** Twenty seeds gave one
+  instance, so a split by seed held out copies of training instances, and the
+  RL stage's tuning and validation sets were the same problems. The seed now
+  decides which room each ball and the robot start in (every ball still has to
+  change rooms), and how far along the pipeline each part starts. **Every
+  generated gripper and workshop instance changes**; `demos/workshop` is the one
+  in which every part starts raw, and `generate` no longer reproduces it.
+- **Generators could emit an instance solved before it starts.** `blocksworld`
+  compared tower lists in order and skipped the check for two blocks, where 75
+  of the first 200 seeds came out trivial; `random-strips` could draw a goal
+  that already held. Both now re-draw only in that case, so every instance that
+  was not trivial is byte-identical to before.
+- **The benchmark harness merged configurations that differed in planner
+  arguments** — `wastar` at weights 1 and 5 summarised as one entry with twice
+  the instances — and recorded `("gbfs", None)` as heuristic `""` although it
+  ran `hff`. Rows carry a `config` label with the arguments
+  (`wastar/hff(weight=5.0)`, also a new CSV column), which `summarize` and the
+  dashboard group on; a repeated config is suffixed `#2`; and `heuristic` is
+  what `solve_task` actually ran, worked out by the new
+  `jupyddl.api.resolve_heuristic`.
 
 ## [2.4.0]
 

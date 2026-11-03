@@ -8,6 +8,7 @@ emits unsolvable instances would poison every benchmark built on it.
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
@@ -53,11 +54,80 @@ def test_same_seed_gives_identical_bytes(kind):
     assert first == second
 
 
+def _content(text: str) -> str:
+    """Problem text without comments or the problem's name, both of which
+    carry the seed whether or not anything else does."""
+    text = re.sub(r";;[^\n]*", "", text)
+    return re.sub(r"\(problem [^\s)]+", "(problem _", text)
+
+
 @pytest.mark.parametrize("kind", NAMES)
 def test_different_seeds_usually_differ(kind):
-    """Seeds must actually vary the instance, or a ladder is one problem twice."""
-    varied = {generate(kind, size=6, seed=seed)[1] for seed in range(6)}
+    """Seeds must actually vary the instance, or a ladder is one problem twice.
+
+    Compared without the name and comments: gripper and workshop used to put
+    the seed there and nowhere else, which passed a byte comparison while
+    twenty seeds gave one instance — so a split by seed held out a copy of a
+    training instance, and the RL stage's tuning and validation sets were the
+    same problems.
+    """
+    varied = {_content(generate(kind, size=6, seed=seed)[1]) for seed in range(6)}
     assert len(varied) > 1, f"{kind} ignores its seed"
+    smaller = {_content(generate(kind, size=3, seed=seed)[1]) for seed in range(20)}
+    assert len(smaller) >= 4, f"{kind} has only {len(smaller)} instances at size 3"
+
+
+@pytest.mark.parametrize("kind", NAMES)
+def test_no_instance_is_solved_before_it_starts(kind):
+    """A goal that holds in the initial state teaches a learner nothing and
+    flatters every planner. Blocksworld at two blocks did this for 75 of the
+    first 200 seeds."""
+    for size in (2, 3, 4):
+        for seed in range(40):
+            task = build(kind, size=size, seed=seed)
+            assert not task.goal_reached(task.initial_state()), (kind, size, seed)
+
+
+def test_random_strips_never_samples_a_goal_that_already_holds():
+    """The goal is drawn from the end of the planted chain, and could land
+    entirely on facts the initial state already had."""
+    for size in range(9, 13):
+        for seed in range(60):
+            task = build("random-strips", size=size, seed=seed)
+            assert not task.goal_reached(task.initial_state()), (size, seed)
+
+
+def test_random_strips_survives_a_chain_that_undoes_itself():
+    """Seed 11 at size 9 with four actions plants a chain whose end state is a
+    subset of its start, so every fact a goal could be drawn from already
+    holds. One more planted step gives the goal something to ask for."""
+    task = build("random-strips", size=9, seed=11, actions=4)
+    assert not task.goal_reached(task.initial_state())
+    result = solve_task(task, "astar", "blind")
+    assert result.solved and validate_plan(task, result.plan)
+
+
+def test_only_previously_trivial_instances_changed():
+    """The re-draws above happen only where an instance was trivial, so every
+    other seed still emits the bytes it always did. ``demos/blocksworld12`` is
+    published as exactly this generator's output."""
+    demo = os.path.join(os.path.dirname(__file__), "..", "demos", "blocksworld12")
+    with open(os.path.join(demo, "problem.pddl"), encoding="utf-8") as handle:
+        assert generate("blocksworld", size=12, seed=3)[1] == handle.read()
+
+
+def test_gripper_and_workshop_seeds_change_where_things_start():
+    gripper = build("gripper", size=4, seed=5)
+    assert len(gripper.goals) == 4  # every ball still has to move
+
+    def initial(kind, size, seed):
+        return generate(kind, size=size, seed=seed)[1].split("(:goal")[0]
+
+    starts = {initial("gripper", 4, seed).count(" rooma)") for seed in range(20)}
+    assert len(starts) > 1, "every seed puts the balls in the same rooms"
+
+    stages = {initial("workshop", 3, seed).count("(cut ") for seed in range(20)}
+    assert len(stages) > 1, "every seed starts the parts at the same stage"
 
 
 @pytest.mark.parametrize("kind", ["gripper", "blocksworld", "logistics"])

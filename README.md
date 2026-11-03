@@ -471,12 +471,14 @@ and to make the difference between planners obvious:
 | `errands` | **preferences + constraints**: soft goals priced by a metric | 10 |
 | `timed-market` | **timed initial literals**: the plan waits for opening time | 4 |
 
-Two of them are byte-for-byte generator output — `blocksworld12` is
-`generate blocksworld --size 12 --seed 3`, `workshop` is
-`generate workshop --size 3 --seed 1`. The rest were either hand-written
+`blocksworld12` is byte-for-byte generator output:
+`generate blocksworld --size 12 --seed 3`. `workshop` was
+`generate workshop --size 3 --seed 1` until that generator's seed began to
+decide how far along the pipeline each part starts; it is the instance in which
+every part starts raw. The rest were either hand-written
 (`sokoban`, `hanoi`, `elevator`, `errands`, `timed-market`, and `network`,
 whose recursive axiom is the point of it) or generated and then edited by hand,
-so `generate` will produce something equivalent but not identical.
+so `generate` will produce something similar but not identical.
 
 The `pddl-examples` git submodule supplies the smaller instances used by the
 parser and grounder tests.

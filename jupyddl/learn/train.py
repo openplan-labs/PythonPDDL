@@ -28,11 +28,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .dataset import Corpus
+from .dataset import Corpus, instance_family
 from .heuristic import HeuristicBundle
 from .model import MLP, Adam
 
 __all__ = ["TrainConfig", "TrainReport", "train", "evaluate"]
+
+#: Relative gap below which two successor scores count as tied.
+_TIE = 1e-9
 
 
 @dataclass
@@ -84,7 +87,15 @@ class TrainReport:
 
 
 def train(corpus: Corpus, config: Optional[TrainConfig] = None) -> tuple:
-    """Fit a heuristic to ``corpus``. Returns ``(bundle, report)``."""
+    """Fit a heuristic to ``corpus``. Returns ``(bundle, report)``.
+
+    The checkpoint kept is the one with the best ranking accuracy on the
+    instances :meth:`~jupyddl.learn.dataset.Corpus.split` held out, and
+    ``report.metrics`` reports it there: ``top1``, ``in_top2`` and ``groups``
+    are held-out figures, ``train_top1`` and friends the training ones. When
+    no held-out instance yielded a ranking group, both selection and ``top1``
+    fall back to the training groups and ``ranking_held_out`` is ``False``.
+    """
     config = config or TrainConfig()
     if not corpus.samples:
         raise ValueError("cannot train on an empty corpus")
@@ -93,6 +104,22 @@ def train(corpus: Corpus, config: Optional[TrainConfig] = None) -> tuple:
     train_set, val_set = corpus.split(config.validation, seed=config.seed)
     if not train_set.samples:  # pragma: no cover - guarded by split()
         raise ValueError("the training split came out empty")
+    if config.rank_weight >= 1.0 and not train_set.groups:
+        # Every gradient would be zero: the loop would run, select epoch 1 and
+        # hand back the random initialisation as a trained model.
+        raise ValueError(
+            "a pure ranking objective (rank_weight=1.0) needs ranking groups, "
+            "and the training split has none; build the corpus with "
+            "ranking=True or give the regression term some weight"
+        )
+    # Checkpoints are selected on ranking accuracy over the held-out instances.
+    # Only when none of them yielded a group does selection fall back to the
+    # training groups, and the report then says the figure is not held out —
+    # as it does for a one-instance corpus, whose split is by sample.
+    trained_on = {instance_family(s.instance) for s in train_set.samples}
+    held_out = {instance_family(s.instance) for s in val_set.samples} - trained_on
+    ranking_groups = val_set.groups or train_set.groups
+    ranking_held_out = bool(val_set.groups) and bool(held_out)
 
     # Normalise targets so the network learns a shape rather than a magnitude.
     targets = [s.target for s in train_set.samples]
@@ -129,7 +156,12 @@ def train(corpus: Corpus, config: Optional[TrainConfig] = None) -> tuple:
         metrics = evaluate(model, scored, scale)
         # Selection is on ranking accuracy where there is any to measure, since
         # that is the quantity search consumes; MAE only breaks ties.
-        rank_metrics = evaluate_ranking(model, train_set.groups, scale)
+        rank_metrics = evaluate_ranking(model, ranking_groups, scale)
+        train_rank = (
+            rank_metrics
+            if ranking_groups is train_set.groups
+            else evaluate_ranking(model, train_set.groups, scale)
+        )
         score = -(rank_metrics.get("top1", 0.0)) + 1e-3 * metrics["mae"]
         report.history.append(
             {
@@ -137,7 +169,8 @@ def train(corpus: Corpus, config: Optional[TrainConfig] = None) -> tuple:
                 "loss": epoch_loss / max(1, steps),
                 "val_mae": metrics["mae"],
                 "val_rmse": metrics["rmse"],
-                "train_top1": rank_metrics.get("top1", 0.0),
+                "val_top1": rank_metrics.get("top1", 0.0),
+                "train_top1": train_rank.get("top1", 0.0),
             }
         )
         if config.verbose:  # pragma: no cover - operator convenience
@@ -164,8 +197,18 @@ def train(corpus: Corpus, config: Optional[TrainConfig] = None) -> tuple:
     final.update(
         {"train_" + k: v for k, v in evaluate(model, train_set, scale).items()}
     )
-    final.update(evaluate_ranking(model, corpus.groups, scale))
-    final["held_out_instances"] = len({s.instance for s in val_set.samples})
+    # ``top1`` is measured on the held-out instances' groups, the same ones it
+    # was selected on. It used to be measured over every group in the corpus,
+    # training ones included, while the command line printed it as held out.
+    final.update(evaluate_ranking(model, ranking_groups, scale))
+    final.update(
+        {
+            "train_" + k: v
+            for k, v in evaluate_ranking(model, train_set.groups, scale).items()
+        }
+    )
+    final["ranking_held_out"] = ranking_held_out
+    final["held_out_instances"] = len(held_out)
     report.metrics = final
 
     bundle = HeuristicBundle(
@@ -269,9 +312,20 @@ def evaluate_ranking(model: MLP, groups, scale: float) -> dict:
     """How often the model prefers the successor the plan actually took.
 
     This tracks search performance far better than RMSE does. ``top1`` is the
-    fraction of decision points where the plan's successor scores strictly
-    lowest; ``in_top2`` allows one better-looking sibling, which a search with
-    any backtracking will usually survive.
+    fraction of decision points where the plan's successor comes first;
+    ``in_top2`` allows one better-looking sibling, which a search with any
+    backtracking will usually survive.
+
+    **Ties earn partial credit**: a successor level with ``k`` siblings and
+    beaten by none scores ``1/(k+1)`` towards ``top1`` — its chance of coming
+    first when the tie is broken at random — and ``in_top2`` is credited the
+    same way. Both are therefore expected accuracies under random
+    tie-breaking. Counting a tie as a hit, as this once did, scored a model
+    that outputs a constant at a perfect 1.0, and checkpoint selection, which
+    reads this number, then preferred a collapsed epoch. Under partial credit a
+    constant model scores exactly what guessing would. Scores within a relative
+    ``1e-9`` of each other count as tied, so the answer does not depend on
+    whether NumPy summed them in a different order.
     """
     groups = list(groups or ())
     if not groups:
@@ -284,16 +338,18 @@ def evaluate_ranking(model: MLP, groups, scale: float) -> dict:
         flat.extend(group.others)
         spans.append((start, len(flat)))
     outputs, _ = model.forward_batch([f for f, _ in flat])
-    top1 = 0
-    top2 = 0
+    top1 = 0.0
+    top2 = 0.0
     for start, end in spans:
         scores = [flat[i][1] / scale + outputs[i] for i in range(start, end)]
         chosen = scores[0]
-        better = sum(1 for s in scores[1:] if s < chosen)
-        if better == 0:
-            top1 += 1
-        if better <= 1:
-            top2 += 1
+        tolerance = _TIE * max(1.0, abs(chosen))
+        better = sum(1 for s in scores[1:] if s < chosen - tolerance)
+        tied = sum(1 for s in scores[1:] if abs(s - chosen) <= tolerance)
+        # The chosen successor's rank is uniform over better+1 .. better+tied+1.
+        slots = tied + 1
+        top1 += max(0, min(1 - better, slots)) / slots
+        top2 += max(0, min(2 - better, slots)) / slots
     return {
         "top1": top1 / len(spans),
         "in_top2": top2 / len(spans),

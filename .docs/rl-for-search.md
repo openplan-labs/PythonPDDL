@@ -133,7 +133,9 @@ on a small instance.
 | after CEM | **100** | **137 expansions, 1.00 coverage** |
 
 CEM fixed the coverage failure imitation left behind, then shaved expansions:
-2.7× fewer nodes on instances no stage of training ever saw.
+2.7× fewer nodes on instances no stage of training ever saw. (The two means are
+over different instance sets; see [the second
+correction](#a-second-correction-2026-11-03).)
 
 ### A correction, and what the numbers actually say
 
@@ -202,6 +204,38 @@ cem iter 7: tuning 101, validation 73, incumbent 73 (coverage 1.00)
 The general lesson is the ordinary one, which the derivative-free framing made
 easy to forget: **change one thing at a time, and look at the distribution
 before believing the mean.** `learn_heuristic` always passes one.
+
+### A second correction, 2026-11-03
+
+A review of the learning code turned up three more things that bear on this
+page. Nothing above has been re-run — the expensive measurement is not repeated
+for a correction note — so the figures stand as measured, and this says what
+they measured.
+
+- **"366 expansions, 0.90 coverage" is a mean over the nine instances
+  imitation solved.** The tenth, `blocksworld-13-7777`, contributed nothing
+  rather than 30 000, and the 137 it is compared with averages all ten. On the
+  nine both solved, the per-instance table gives 129 for σ=0.15, so the
+  like-for-like improvement is 366 → 129, 2.8× rather than 2.7×; charging the
+  unsolved instance as `search_cost` does (twice the budget) puts imitation's
+  own mean at 6 329. The bias ran in imitation's favour, which is the
+  dangerous direction: it is how a heuristic that gives up looks cheap.
+  `summarise_transfer` averaged over each heuristic's own solved runs; it now
+  charges failures and reports coverage beside every mean.
+- **Every model here descends from a checkpoint chosen by a broken score.**
+  Imitation kept the epoch with the best top-1 measured over *training*
+  instances, with a tie counted as a correct ranking. Re-run with the fix on
+  the same corpus, blocksworld keeps epoch 12 rather than 20 (details and the
+  re-measured top-1 in [learned-heuristics.md](learned-heuristics.md#corrections-2026-11-03)).
+  The CEM history, the per-instance table, the σ comparison and the headroom
+  measurements below are true of the model the old rule kept; the fixed code
+  starts CEM from a different one. Not re-measured.
+- **DAgger's retraining split leaked.** Relabelled states are filed under
+  `X#dagger1`, and the split keyed on the full name, so a training instance's
+  own relabelled states could sit in validation. That fed only the MAE
+  tie-break in checkpoint selection, not the search costs quoted (89 → 15 and
+  89 → 164, which `search_cost` measures directly), but it made the validation
+  MAE of those rounds optimistic. The split now keys on the name before `#`.
 
 ## The three things that decide whether this works
 
