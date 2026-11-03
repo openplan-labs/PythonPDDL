@@ -1,46 +1,53 @@
 # Releasing jupyddl
 
-## The normal way: merge the release PR
+## The normal way: merge a pull request
 
-Releases are **semantic and automatic**. Nobody picks a version number.
+Releases are **semantic and automatic**. Nobody picks a version number, and
+nobody approves anything. **Merging a pull request is the release decision.**
 
-1. Every pull request is squash-merged, so its **title** becomes the commit
-   on `main`. The `pr-title` check requires a
-   [Conventional Commit](https://www.conventionalcommits.org) title:
+On every push to `main`, `release.yml` looks up the pull request that was just
+merged and takes the largest bump that its title and its commits ask for
+(`tools/release.py`):
 
-   | Title | Release it triggers |
-   |---|---|
-   | `fix: …`, `fix(lmcut): …`, `perf: …` | patch, 2.4.0 → 2.4.1 |
-   | `feat: …` | minor, 2.4.0 → 2.5.0 |
-   | `feat!: …`, or a `BREAKING CHANGE:` footer | major, 2.4.0 → 3.0.0 |
-   | `docs:`, `chore:`, `ci:`, `test:`, `refactor:`, `build:`, `style:` | none on its own; it rides along with the next one |
+| Commit or title | Release |
+|---|---|
+| `fix: …`, `fix(lmcut): …`, `perf: …` | patch, 2.4.0 → 2.4.1 |
+| `feat: …` | minor, 2.4.0 → 2.5.0 |
+| `feat!: …`, `fix!: …`, or a `BREAKING CHANGE:` footer | major, 2.4.0 → 3.0.0 |
+| `docs:`, `chore:`, `ci:`, `test:`, `refactor:`, `build:`, `style:` | none |
 
-2. On every push to `main`, `release-please.yml` keeps **one release PR**
-   (`chore: release X.Y.Z`) up to date. It bumps `pyproject.toml` and
-   `jupyddl.__version__`, writes the changelog section from the merged
-   titles, files the hand-written `## [Unreleased]` notes under it, and
-   rebuilds `web/dist`, which records the version. The bump is the largest any
-   merged title asks for.
-3. **Merging the release PR is the release.** release-please tags the merge
-   commit and creates the GitHub Release. It then starts `release.yml` on that
-   tag, which builds, verifies, publishes to PyPI and attaches the artifacts,
-   with the same checks as below.
+- **Override with a label.** Add `release:major`, `release:minor`,
+  `release:patch` or `release:none` to the pull request before merging, for
+  the rare change whose commits say the wrong thing.
+- **Nothing is lost.** Commits on `main` since the last `v*` tag count too.
+  So a merge whose run was dropped, because several merges landed at once,
+  still releases with the next one.
 
-Want a release after every merge? Merge the release PR right after. Want
-batches? Let it collect. Either way the version follows from what went in.
+When a release is due, the workflow:
 
-**One-time repository settings** (a maintainer has to do these):
+1. bumps `pyproject.toml`, `jupyddl.__version__` and `CITATION.cff`;
+2. turns `## [Unreleased]` in `CHANGELOG.md` into `## [X.Y.Z] - date`, using
+   the PR title if nobody wrote an entry;
+3. rebuilds `web/dist`, which records the version;
+4. commits that to `main` as `chore(release): X.Y.Z`, tags `vX.Y.Z`, and
+   starts `pages`;
+5. builds, verifies, publishes to PyPI and cuts the GitHub Release, with every
+   check described below.
 
-- *Settings → Actions → General → Workflow permissions*: tick **Allow GitHub
-  Actions to create and approve pull requests**. Without it release-please
-  cannot open its PR.
-- *Settings → General → Pull Requests*: allow squash merging and set its
-  default commit message to **Pull request title**, so the checked title is
-  what lands on `main`.
-- Do **not** make `pr-title` (or `tests`) a required check without an
-  exception for release-please's PR. A PR opened with the workflow's own
-  token starts no workflows, so those checks never report on it.
-  `release.yml` repeats every check that matters before publishing.
+It pushes with the workflow's own token, which is allowed to push commits and
+tags. That is all it needs: there is no release pull request, so the *Allow
+GitHub Actions to create pull requests* setting is not needed. Those pushes
+start no workflows, so nothing loops.
+
+**Requirements:**
+
+- Squash-merge pull requests with the **PR title** as the commit message
+  (*Settings → General → Pull Requests*). The title is what `pr-title`
+  checks.
+- `main` must accept pushes from GitHub Actions. If you add branch protection,
+  let `github-actions[bot]` push, as the `format` workflow already needs.
+- The `pypi` environment must have no required reviewers, or every release
+  waits for one.
 
 ## By hand
 

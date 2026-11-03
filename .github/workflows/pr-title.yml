@@ -1,8 +1,9 @@
 name: pr-title
 
 # Pull requests are squash-merged, so the title becomes the commit on main --
-# and release-please reads that commit to decide the next version. A title
-# that is not a Conventional Commit is a change the release never mentions.
+# and release.yml reads it (with the PR's own commits) to decide whether
+# merging releases a new version. A title that is not a Conventional Commit
+# asks for no release at all.
 #
 #     feat: add the GOOSE feature extractor        -> minor release
 #     fix(lmcut): handle an empty goal             -> patch release
@@ -22,7 +23,7 @@ jobs:
     name: conventional title
     runs-on: ubuntu-latest
     steps:
-      - name: Check the title release-please will read
+      - name: Check the title release.yml will read
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |

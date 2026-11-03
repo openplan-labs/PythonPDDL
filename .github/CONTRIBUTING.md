@@ -48,6 +48,10 @@ check enforces this:
 - `feat!: drop Python 3.10` → major release
 - `docs: …`, `test: …`, `chore: …`, `ci: …`, `refactor: …` → no release on their own
 
+Merging *is* releasing: the largest bump asked for by the title or any commit
+in the PR ships as soon as it lands on `main`. A `release:major|minor|patch|none`
+label overrides that when the commits say the wrong thing.
+
 Write the user-facing story under `## [Unreleased]` in `CHANGELOG.md` as
 well. The title is one line; the changelog entry is where you explain.
 [`.docs/RELEASING.md`](../.docs/RELEASING.md) covers the rest.

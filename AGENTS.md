@@ -42,24 +42,23 @@ native build step, and the core has zero runtime dependencies.
   rebuilds `web/dist` in the same commit; reformatting a bundled source and
   committing without the rebuild would leave main in a state where `pages`
   refuses to deploy.
-- **`release-please`** — on every push to main, keeps one release PR that
-  bumps the version from the Conventional Commit titles merged since the last
-  release (`fix` patch, `feat` minor, `!`/`BREAKING CHANGE` major), files the
-  hand-written `[Unreleased]` notes under the new section and rebuilds
-  `web/dist` (`tools/release_pr_fixup.py`). Merging it tags the commit and
-  *dispatches* `release`: a tag made with the workflow token triggers nothing.
-  **PR titles must be Conventional Commits** (`pr-title` checks); squash-merge
-  with the PR title as the commit message. `__version__` carries an
-  `x-release-please-version` marker, and `.release-please-manifest.json` must
-  agree with it and `pyproject.toml` (`tests/test_release.py`).
-- **`release`** — fires on a `v*` tag, or is dispatched by `release-please`. Builds, refuses a tag that disagrees
+- **`release`** — on every push to main, `plan` reads the merged PR (title,
+  its commits, and every commit since the last `v*` tag) and picks the bump
+  (`tools/release.py`: `fix`/`perf` patch, `feat` minor, `!`/`BREAKING CHANGE`
+  major; a `release:*` label overrides). `bump` then edits the version in
+  `pyproject.toml`, `jupyddl/__init__.py` and `CITATION.cff`, dates
+  `[Unreleased]` in the changelog, rebuilds `web/dist`, commits
+  `chore(release): X.Y.Z` to main, tags it and starts `pages`. No release PR
+  and no approval: the workflow token may push but not open PRs, so this is
+  the shape that needs no extra settings. **PR titles must be Conventional
+  Commits** (`pr-title` checks). Also fires on a hand-pushed `v*` tag. Builds, refuses a tag that disagrees
   with `pyproject.toml` or a `__version__` that disagrees with either, runs
   `twine check --strict`, installs the wheel clean and plans with it, publishes
   to PyPI over OIDC (no stored token), then cuts the GitHub Release from the
   changelog section for that version. `.docs/RELEASING.md` is the runbook,
   including the one-time PyPI trusted-publisher setup only a maintainer can do.
-  Do not bump versions by hand: release-please does it in both places (and the
-  manifest) and rebuilds `web/dist`, which carries it too.
+  Do not bump versions by hand: merging a `feat:`/`fix:` PR does it in all
+  three places and rebuilds `web/dist`, which carries it too.
 - **`pages`** — bundles, refuses to deploy a stale `web/dist`, then deploys.
   Its job is called `bundle`, not `build`: a check named `build` has to mean
   the packaging workflow, and two checks with one name is a reliable way to gate
