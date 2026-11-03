@@ -88,6 +88,12 @@ class Operator:
     numeric_pre: tuple = ()
     numeric_eff: tuple = ()
     duration: float = 0.0
+    # Complement facts ``(not p)`` this operator's conditional effects can
+    # touch. Adds beat deletes for ordinary facts, but for a complement the
+    # delete must win: it is deleted exactly when ``p`` is added, and an added
+    # ``p`` stays. Only needed at run time when a conditional effect fires; the
+    # unconditional part is already consistent from grounding.
+    complements: frozenset = frozenset()
 
     @property
     def base_name(self) -> str:
@@ -111,14 +117,19 @@ class Operator:
     def apply(self, state):
         """Return the successor state (conditions evaluated in ``state``)."""
         facts = facts_of(state)
-        dels = set(self.delete)
-        adds = set(self.add)
-        for effect in self.cond_effects:
-            if effect.condition <= facts:
-                dels |= effect.delete
-                adds |= effect.add
-        # Adds take precedence over deletes (standard STRIPS semantics).
-        new_facts = frozenset((facts - dels) | adds)
+        if self.cond_effects:
+            dels = set(self.delete)
+            adds = set(self.add)
+            for effect in self.cond_effects:
+                if effect.condition <= facts:
+                    dels |= effect.delete
+                    adds |= effect.add
+            if self.complements:
+                adds -= dels & self.complements
+            # Adds take precedence over deletes (standard STRIPS semantics).
+            new_facts = frozenset((facts - dels) | adds)
+        else:
+            new_facts = frozenset((facts - self.delete) | self.add)
 
         if not isinstance(state, State):
             return new_facts
@@ -156,6 +167,15 @@ class Task:
     # Operators introduced purely by a compilation step (a disjunctive goal,
     # say). They are real operators to the search but noise in a printed plan.
     synthetic: frozenset = field(default_factory=frozenset)
+    # ``(derived fact, its complement)`` pairs for derived predicates that some
+    # condition negates. The complement is recomputed with the axioms.
+    derived_complements: tuple = ()
+
+    def __post_init__(self):
+        # Everything ``close`` recomputes from scratch on every state.
+        self._derived = frozenset(axiom.head for axiom in self.axioms) | frozenset(
+            comp for _, comp in self.derived_complements
+        )
 
     @property
     def num_facts(self) -> int:
@@ -172,14 +192,17 @@ class Task:
         return self.close(self.init)
 
     def close(self, state):
-        """Add every derived fact entailed by ``state`` (least fixpoint).
+        """Recompute every derived fact from the basic facts of ``state``.
 
-        Rules are re-scanned until nothing new fires. Derived predicates cannot
-        appear in action effects, so this only ever grows the fact set.
+        Derived facts carried over from the previous state are dropped first --
+        an action that deletes the support of a derived fact must retract it --
+        and the rules are then re-scanned to their least fixpoint. A negated
+        derived fact holds exactly when the fixpoint did not derive it.
         """
-        if not self.axioms:
+        if not self.axioms and not self.derived_complements:
             return state
         facts = set(facts_of(state))
+        facts -= self._derived
         changed = True
         while changed:
             changed = False
@@ -187,6 +210,9 @@ class Task:
                 if axiom.head not in facts and axiom.body <= facts:
                     facts.add(axiom.head)
                     changed = True
+        for head, comp in self.derived_complements:
+            if head not in facts:
+                facts.add(comp)
         closed = frozenset(facts)
         if isinstance(state, State):
             return State(closed, state.values)
@@ -242,11 +268,13 @@ class Task:
 
         Every conditional effect becomes its own relaxed operator whose
         precondition is the action precondition conjoined with the effect
-        condition. This is the standard, sound treatment of conditional effects
-        under delete relaxation. Numeric preconditions are *ignored*, which only
-        makes the relaxation more permissive and so keeps the heuristics
-        admissible; axioms enter as zero-cost rules for the same reason.
-        Returns a list of ``(precond, add, cost)``.
+        condition. That is sound for reachability, but it charges the action's
+        cost once per effect, so heuristics that add costs up or partition them
+        (LM-cut, ``h^m`` for ``m >= 2``) can overestimate on such tasks -- their
+        ``admissible`` flag is cleared there. Numeric preconditions are
+        *ignored*, which only makes the relaxation more permissive; axioms enter
+        as zero-cost rules, and a negated derived fact as a free one, for the
+        same reason. Returns a list of ``(precond, add, cost)``.
         """
         relaxed = []
         for operator in self.operators:
@@ -263,4 +291,10 @@ class Task:
                 relaxed.append((operator.precond, frozenset(), operator.cost))
         for axiom in self.axioms:
             relaxed.append((axiom.body, frozenset({axiom.head}), 0))
+        for _, comp in self.derived_complements:
+            relaxed.append((frozenset(), frozenset({comp}), 0))
         return relaxed
+
+    @property
+    def has_conditional_effects(self) -> bool:
+        return any(op.cond_effects for op in self.operators)

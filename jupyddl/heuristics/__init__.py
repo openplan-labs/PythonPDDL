@@ -50,8 +50,14 @@ def make_heuristic(name, task) -> Heuristic:
     An unregistered name triggers plugin discovery once (see
     :mod:`jupyddl.plugins`) before it is reported as unknown.
     """
-    if callable(name) and not isinstance(name, str):
-        return name
+    if not isinstance(name, str):
+        # A class or partial from HEURISTICS is a factory: build it for this
+        # task. Anything else callable is an already-built ``state -> h``.
+        if isinstance(name, (type, partial)):
+            return name(task)
+        if callable(name):
+            return name
+        raise TypeError(f"not a heuristic: {name!r}")
     if ":" in name:
         kind, _, argument = name.partition(":")
         loader = LOADERS.get(kind)

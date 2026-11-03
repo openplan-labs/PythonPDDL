@@ -29,6 +29,10 @@ class LMCutHeuristic(Heuristic):
 
     def __init__(self, task):
         super().__init__(task)
+        # Each conditional effect is relaxed into its own operator charging the
+        # full action cost, and the cost partitioning can then count it twice.
+        if task.has_conditional_effects:
+            self.admissible = False
         nf = task.num_facts
         self.INIT = nf  # artificial "always true" fact
         self.GOAL = nf + 1  # artificial goal fact
@@ -42,7 +46,8 @@ class LMCutHeuristic(Heuristic):
             self.ops.append(_AugOp(len(self.ops), pre, add, cost))
         # Artificial goal operator (cost 0) collecting the real goal.
         self.goal_op = len(self.ops)
-        self.ops.append(_AugOp(self.goal_op, task.goals, frozenset({self.GOAL}), 0))
+        goal_pre = task.goals if task.goals else frozenset({self.INIT})
+        self.ops.append(_AugOp(self.goal_op, goal_pre, frozenset({self.GOAL}), 0))
 
         self.consumers: list[list[int]] = [[] for _ in range(self.num)]
         for op in self.ops:
@@ -65,8 +70,8 @@ class LMCutHeuristic(Heuristic):
 
             goal_zone = self._goal_zone(costs, pcf)
             cut = self._cut(source, goal_zone, pcf, hmax)
-            if not cut:  # safety; should not happen when hmax(goal) > 0
-                return math.inf
+            if not cut:  # should not happen when hmax(goal) > 0
+                return total  # a lower bound either way; inf would prune
             min_cost = min(costs[oi] for oi in cut)
             total += min_cost
             for oi in cut:
@@ -83,7 +88,8 @@ class LMCutHeuristic(Heuristic):
             heapq.heappush(pq, (0, f))
 
         def relax(op: _AugOp):
-            supporter = max(op.pre, key=lambda p: cost[p])
+            # Ties go to the higher fact id, so the cut never depends on set order.
+            supporter = max(op.pre, key=lambda p: (cost[p], p))
             value = cost[supporter] + costs[op.idx]
             pcf[op.idx] = supporter
             if math.isinf(cost[supporter]):
