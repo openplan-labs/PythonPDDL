@@ -1,9 +1,21 @@
 """Command-line interface.
 
 ``solve``, ``benchmark``, ``animate``, ``demo``, ``requirements``, ``generate``,
-``learn`` and ``plugins``. Every long-running command accepts ``--max-expansions`` and
-``--time-limit``; when a search stops on one of those it says so rather than
-reporting the instance unsolvable.
+``learn`` and ``plugins``. Every command that searches accepts
+``--max-expansions`` and ``--time-limit``; when a search stops on one of those
+it says so rather than reporting the instance unsolvable.
+
+Exit codes, so a script can tell the outcomes apart:
+
+=====  =========================================================
+0      solved, and the plan validates
+1      the search finished and found no plan
+2      bad input: a missing file, a parse error, an unknown name
+3      a budget stopped the search before it found a plan
+4      a plan was found but failed validation (a bug: report it)
+=====  =========================================================
+
+Set ``JUPYDDL_DEBUG=1`` to get the full traceback instead of a one-line error.
 """
 
 from __future__ import annotations
@@ -12,6 +24,7 @@ import argparse
 import os
 import sys
 
+from . import __version__
 from .api import build_task, solve_task, trace_search, validate_plan
 from .benchmark import (
     discover_instances,
@@ -21,8 +34,57 @@ from .benchmark import (
     to_csv,
 )
 from .heuristics import HEURISTICS, LOADERS
+from .parser import PDDLError
 from .plugins import describe_plugins, load_plugins
 from .search import PLANNERS
+
+EXIT_SOLVED = 0
+EXIT_NO_PLAN = 1
+EXIT_BAD_INPUT = 2
+EXIT_TRUNCATED = 3
+EXIT_INVALID_PLAN = 4
+
+EXIT_CODES = """exit codes:
+  0  solved, and the plan validates
+  1  the search finished and found no plan
+  2  bad input: a missing file, a parse error, an unknown name
+  3  a budget stopped the search before it found a plan
+  4  a plan was found but failed validation (a bug: please report it)"""
+
+
+class CLIError(Exception):
+    """A problem with what the user asked for, reported as one line."""
+
+
+def _need_viz(what: str) -> None:
+    """Fail before searching, not after, when a chart needs matplotlib."""
+    try:
+        import matplotlib  # noqa: F401
+    except ImportError:
+        raise CLIError(
+            f"{what} needs the viz extra: pip install 'jupyddl[viz]'"
+        ) from None
+
+
+def _add_budget(p, default_time=None) -> None:
+    p.add_argument(
+        "--max-expansions",
+        type=int,
+        default=None,
+        help="stop each search after this many node expansions",
+    )
+    hint = f" (default {default_time:g}; 0 for none)" if default_time else ""
+    p.add_argument(
+        "--time-limit",
+        type=float,
+        default=default_time,
+        help="stop each search after this many seconds" + hint,
+    )
+
+
+def _time_limit(args):
+    limit = getattr(args, "time_limit", None)
+    return limit if limit and limit > 0 else None
 
 
 def _needs_heuristic(planner: str) -> bool:
@@ -89,18 +151,7 @@ def _add_solve(sub):
         "--plan-plot", default=None, help="write the plan timeline chart (PNG)"
     )
     p.add_argument("--dark", action="store_true", help="render charts for dark mode")
-    p.add_argument(
-        "--max-expansions",
-        type=int,
-        default=None,
-        help="stop after this many node expansions and report what was found",
-    )
-    p.add_argument(
-        "--time-limit",
-        type=float,
-        default=None,
-        help="stop after this many seconds and report what was found",
-    )
+    _add_budget(p)
     p.add_argument("--quiet", action="store_true", help="do not print the plan")
     p.set_defaults(func=_cmd_solve)
 
@@ -117,20 +168,23 @@ def _add_benchmark(sub):
         default=None,
         help="write the full benchmark dashboard: coverage, effort, time, heatmap",
     )
-    p.add_argument("--metric", default="expanded")
+    p.add_argument(
+        "--metric",
+        default="expanded",
+        choices=[
+            "expanded",
+            "generated",
+            "evaluated",
+            "runtime",
+            "cost",
+            "plan_length",
+        ],
+        help="what --plot compares",
+    )
     p.add_argument("--dark", action="store_true", help="render charts for dark mode")
-    p.add_argument(
-        "--max-expansions",
-        type=int,
-        default=None,
-        help="stop after this many node expansions and report what was found",
-    )
-    p.add_argument(
-        "--time-limit",
-        type=float,
-        default=None,
-        help="stop after this many seconds and report what was found",
-    )
+    # A default limit: one blind search on a large instance would otherwise
+    # stall the whole table, which is what `benchmark demos` used to do.
+    _add_budget(p, default_time=10.0)
     p.set_defaults(func=_cmd_benchmark)
 
 
@@ -151,6 +205,7 @@ def _add_animate(sub):
     p.add_argument("--fps", type=int, default=30)
     p.add_argument("--seconds", type=float, default=8.0)
     p.add_argument("--dark", action="store_true")
+    _add_budget(p)
     p.set_defaults(func=_cmd_animate)
 
 
@@ -160,7 +215,11 @@ def _add_demo(sub):
         help="run the bundled demo instances and write every chart to a folder",
     )
     p.add_argument("-o", "--output", default="gallery", help="output folder")
-    p.add_argument("--root", default="demos", help="folder of demo instances")
+    p.add_argument(
+        "--root",
+        default="demos",
+        help="folder of instances (default: demos/, in a source checkout)",
+    )
     p.add_argument(
         "--both-modes",
         action="store_true",
@@ -169,6 +228,7 @@ def _add_demo(sub):
     p.add_argument(
         "--animate", action="store_true", help="also render the search animations"
     )
+    _add_budget(p, default_time=10.0)
     p.set_defaults(func=_cmd_demo)
 
 
@@ -195,6 +255,8 @@ def _observers(args):
 
 
 def _cmd_solve(args) -> int:
+    if args.plot or args.tree or args.plan_plot:
+        _need_viz("--plot/--tree/--plan-plot")
     task = build_task(args.domain, args.problem)
     heuristic = args.heuristic  # "none" is resolved by solve_task
     kwargs = {"weight": args.weight} if args.search == "wastar" else {}
@@ -205,7 +267,7 @@ def _cmd_solve(args) -> int:
         heuristic,
         observer=observer,
         max_expansions=args.max_expansions,
-        time_limit=args.time_limit,
+        time_limit=_time_limit(args),
         **kwargs,
     )
 
@@ -226,7 +288,7 @@ def _cmd_solve(args) -> int:
             else:
                 print("No plan found.")
         _print_stats(result)
-        return 1
+        return EXIT_TRUNCATED if result.truncated else EXIT_NO_PLAN
     valid = validate_plan(task, result.plan)
     visible = task.visible_plan(result.plan)
     if not args.quiet:
@@ -239,7 +301,7 @@ def _cmd_solve(args) -> int:
     print(f"Valid: {valid}")
     if not args.live:
         _print_stats(result)
-    return 0 if valid else 2
+    return EXIT_SOLVED if valid else EXIT_INVALID_PLAN
 
 
 def _write_charts(args, trace) -> None:
@@ -250,11 +312,8 @@ def _write_charts(args, trace) -> None:
     ]
     if not any(path for path, _ in targets):
         return
-    try:
-        from . import viz
-    except ImportError as exc:
-        print(f"Charts need the viz extra: {exc}", file=sys.stderr)
-        return
+    from . import viz  # _cmd_solve checked it is installed before searching
+
     for path, function in targets:
         if not path:
             continue
@@ -263,20 +322,29 @@ def _write_charts(args, trace) -> None:
 
 
 def _cmd_benchmark(args) -> int:
+    if args.plot or args.dashboard:
+        _need_viz("--plot/--dashboard")
+    try:
+        heuristic_spec(args.heuristic)
+    except argparse.ArgumentTypeError as exc:
+        raise CLIError(str(exc)) from None
+    planners = [name.strip() for name in args.planners.split(",") if name.strip()]
+    unknown = [name for name in planners if name not in PLANNERS]
+    if unknown:
+        raise CLIError(f"unknown planner(s) {unknown}; available: {sorted(PLANNERS)}")
     instances = discover_instances(args.root)
     if not instances:
-        print(f"No instances found under {args.root}", file=sys.stderr)
-        return 1
-    configs = []
-    for planner in args.planners.split(","):
-        planner = planner.strip()
-        configs.append((planner, args.heuristic if _needs_heuristic(planner) else None))
+        raise CLIError(f"no instances found under {args.root}")
+    configs = [
+        (planner, args.heuristic if _needs_heuristic(planner) else None)
+        for planner in planners
+    ]
 
     rows = run_benchmark(
         instances,
         configs,
         max_expansions=args.max_expansions,
-        time_limit=args.time_limit,
+        time_limit=_time_limit(args),
     )
     _print_summary(summarize(rows))
     if args.csv:
@@ -294,10 +362,17 @@ def _cmd_benchmark(args) -> int:
 
 
 def _cmd_animate(args) -> int:
+    _need_viz("animate")
     from .viz import animate_search
 
     task = build_task(args.domain, args.problem)
-    _, trace = trace_search(task, args.search, args.heuristic)
+    _, trace = trace_search(
+        task,
+        args.search,
+        args.heuristic,
+        max_expansions=args.max_expansions,
+        time_limit=_time_limit(args),
+    )
     animate_search(
         trace, args.output, dark=args.dark, fps=args.fps, seconds=args.seconds
     )
@@ -437,10 +512,13 @@ def _add_learn(sub):
 def _range(spec: str):
     """Parse ``'3-6'`` or ``'5'`` into a range."""
     text = str(spec).strip()
-    if "-" in text:
-        lo, _, hi = text.partition("-")
-        return range(int(lo), int(hi) + 1)
-    return range(int(text), int(text) + 1)
+    try:
+        if "-" in text:
+            lo, _, hi = text.partition("-")
+            return range(int(lo), int(hi) + 1)
+        return range(int(text), int(text) + 1)
+    except ValueError:
+        raise CLIError(f"'{spec}' is not a size or a range like 3-6") from None
 
 
 def _cmd_learn(args) -> int:
@@ -469,8 +547,8 @@ def _cmd_learn(args) -> int:
             verbose=True,
         )
     except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        print(f"jupyddl: error: {exc}", file=sys.stderr)
+        return EXIT_BAD_INPUT
 
     bundle.save(output)
     print(f"\nWrote {output}")
@@ -516,7 +594,7 @@ def _cmd_requirements(args) -> int:
             print(
                 f"No requirements with support level '{args.support}'.", file=sys.stderr
             )
-            return 1
+            return EXIT_BAD_INPUT
 
     if args.json:
         import json
@@ -567,7 +645,7 @@ def _cmd_generate(args) -> int:
                 "to stdout but several cannot.",
                 file=sys.stderr,
             )
-            return 1
+            return EXIT_BAD_INPUT
         domain, problem = generate(args.kind, size=args.size, seed=args.seed)
         print(";; ---------- domain.pddl ----------")
         print(domain)
@@ -583,6 +661,7 @@ def _cmd_generate(args) -> int:
 
 def _cmd_demo(args) -> int:
     """Render the whole gallery: per-instance charts plus a benchmark dashboard."""
+    _need_viz("demo")
     from .viz import (
         plot_benchmark_dashboard,
         plot_plan_timeline,
@@ -593,8 +672,8 @@ def _cmd_demo(args) -> int:
 
     instances = discover_instances(args.root)
     if not instances:
-        print(f"No instances found under {args.root}", file=sys.stderr)
-        return 1
+        raise CLIError(f"no instances found under {args.root}")
+    budget = {"max_expansions": args.max_expansions, "time_limit": _time_limit(args)}
     os.makedirs(args.output, exist_ok=True)
     modes = [False, True] if args.both_modes else [False]
 
@@ -609,7 +688,7 @@ def _cmd_demo(args) -> int:
         traces = []
         for planner, heuristic in configs:
             try:
-                _, trace = trace_search(task, planner, heuristic)
+                _, trace = trace_search(task, planner, heuristic, **budget)
                 traces.append(trace)
             except Exception as exc:
                 print(f"   {planner}/{heuristic}: {type(exc).__name__}: {exc}")
@@ -639,6 +718,7 @@ def _cmd_demo(args) -> int:
             ("bfs", None),
             ("dijkstra", None),
         ],
+        **budget,
     )
     to_csv(rows, os.path.join(args.output, "benchmark.csv"))
     for dark in modes:
@@ -674,7 +754,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="jupyddl",
         description="Pure-Python PDDL planning framework.",
+        epilog=EXIT_CODES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"jupyddl {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     _add_solve(sub)
     _add_benchmark(sub)
@@ -685,7 +768,17 @@ def main(argv=None) -> int:
     _add_learn(sub)
     _add_plugins(sub)
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (CLIError, PDDLError, OSError, ValueError, KeyError) as exc:
+        # The user's input, not a bug: one line, not a traceback. A KeyError
+        # here is a lookup by a name the user typed.
+        if os.environ.get("JUPYDDL_DEBUG"):
+            raise
+        message = exc.args[0] if isinstance(exc, KeyError) and exc.args else exc
+        kind = "" if isinstance(exc, (CLIError, OSError)) else f"{type(exc).__name__}: "
+        print(f"jupyddl: error: {kind}{message}", file=sys.stderr)
+        return EXIT_BAD_INPUT
 
 
 if __name__ == "__main__":  # pragma: no cover

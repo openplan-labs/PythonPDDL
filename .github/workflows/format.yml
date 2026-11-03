@@ -34,7 +34,7 @@ jobs:
       - name: Install formatter dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install black
+          python -m pip install "black>=26,<27"  # the pin in pyproject's dev extra
 
       - name: Format with black
         run: |

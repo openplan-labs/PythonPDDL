@@ -261,7 +261,8 @@ def _label_bars(ax, positions, values, pal, horizontal=False, fmt=_fmt):
 
 
 def _headroom(ax, values, factor=1.2):
-    finite = [v for v in values if v is not None and v == v]
+    # A dead end has h = inf; matplotlib refuses an infinite axis limit.
+    finite = [v for v in values if v is not None and math.isfinite(v)]
     top = max(finite or [1])
     ax.set_ylim(0, top * factor if top > 0 else 1)
 
@@ -590,7 +591,7 @@ def plot_search_tree(
                 angle_of[event.node] = 2 * math.pi * (i + 0.5) / count
                 radius_of[event.node] = depth
 
-        h_values = [e.h for e in expansions]
+        h_values = [e.h for e in expansions if e.h is not None and math.isfinite(e.h)]
         h_max = max(h_values) if h_values else 0
 
         for event in expansions:  # edges first, so the nodes sit on top
@@ -610,7 +611,11 @@ def plot_search_tree(
             [angle_of[e.node] for e in expansions],
             [radius_of[e.node] for e in expansions],
             s=26,
-            c=[sequential(e.h / h_max if h_max else 0.5, dark) for e in expansions],
+            # Dead ends (h = inf) take the end of the scale, not a NaN colour.
+            c=[
+                sequential(min(1.0, e.h / h_max) if h_max else 0.5, dark)
+                for e in expansions
+            ],
             zorder=4,
             edgecolors=pal["surface"],
             linewidths=0.6,
@@ -684,6 +689,8 @@ def plot_benchmark_dashboard(
     rows, path: Optional[str] = None, dark: bool = False, title: Optional[str] = None
 ):
     """Coverage, effort, time and a per-instance heatmap for a benchmark run."""
+    if not rows:
+        raise ValueError("no benchmark rows to plot")
     pal = palette(dark)
     configs: list = []
     instances: list = []

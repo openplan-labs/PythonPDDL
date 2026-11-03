@@ -110,6 +110,30 @@ plans because it replays them through the same model. They are now pinned by
   `ValueError` instead of a `TypeError` from deep inside the search;
   `MultiObserver` accepts positional arguments like the base class; the
   `SearchObserver` docstring no longer claims hooks are called defensively.
+- **The command line's exit codes say what happened**: 0 solved, 1 no plan, 2
+  bad input, 3 stopped by a budget, 4 a plan that failed validation. Before,
+  unsolvable, out-of-budget and a crash all exited 1. Bad input — a missing
+  file, a parse error, an unknown planner — is one line on stderr instead of a
+  traceback (`JUPYDDL_DEBUG=1` brings the traceback back). `--version` exists.
+- **`jupyddl demo` and `jupyddl benchmark demos` never finished**: neither took
+  a budget, and `demo`'s blind runs on blocksworld12 do not end. Both now stop
+  each search after 10 s by default; `animate` and `demo` accept
+  `--max-expansions` and `--time-limit` like `solve`.
+- `benchmark` checks `--planners`, `--heuristic` and `--metric` before running
+  rather than reporting `nosuch 0/13`, and every chart option checks for the
+  `viz` extra *before* searching instead of failing (or silently writing
+  nothing) afterwards.
+- **A dead end crashed the charts** (`Axis limits cannot be NaN or Inf`) and
+  coloured the wavefront NaN; in the workbench, an infinite `h` or `f` made the
+  progress message invalid JSON and aborted the run.
+- **A trace's plan showed compiler bookkeeping** (`__observe-1#1`) and
+  disjunct tags; it now records the plan the user reads.
+- **The sdist's own test suite failed**: it dropped `.github/` entirely while a
+  test checks `CONTRIBUTING.md` is there. Only `.github/workflows/` is left
+  out now. `build` runs `twine check --strict`, like `release` does.
+- `black` is pinned to one major version in both the dev extra and the
+  `format` workflow, which installed whatever was newest; Renovate now pins
+  third-party actions to commit digests.
 
 ## [2.4.0]
 
