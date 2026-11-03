@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0](https://github.com/openplan-labs/PythonPDDL/compare/v2.4.0...v2.5.0) (2026-11-03)
+
+
+### Features
+
+* automate semantic releases with release-please ([#169](https://github.com/openplan-labs/PythonPDDL/issues/169)) ([9d05b56](https://github.com/openplan-labs/PythonPDDL/commit/9d05b56a4cc3a514f992c0cc0c5be1b218d2a5e2))
+
+
+### Bug Fixes
+
+* **learn:** honest ranking metrics, seed-sensitive generators, distinct benchmark configs ([#171](https://github.com/openplan-labs/PythonPDDL/issues/171)) ([e6ba76f](https://github.com/openplan-labs/PythonPDDL/commit/e6ba76f5c3ca177d04dd9de06d85332601f2e098))
+* **pddl:** correct durative, PDDL 3 and metric semantics; refuse what cannot be honoured ([#172](https://github.com/openplan-labs/PythonPDDL/issues/172)) ([3646e55](https://github.com/openplan-labs/PythonPDDL/commit/3646e55a12bb3b089d4d48838d5e0d88c2d03dfd))
+
 ## [Unreleased]
 
 ### Added
