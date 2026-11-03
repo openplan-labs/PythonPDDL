@@ -14,7 +14,7 @@ abstract: >-
   grounder, classical through to state-of-the-art planners, heuristics, and a
   benchmarking harness. Distributed on PyPI as jupyddl.
 license: Apache-2.0
-version: 2.4.0
+version: 2.5.0
 keywords:
   - PDDL
   - automated planning
