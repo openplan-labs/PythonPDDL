@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 import math
+import numbers
+import operator
 import random
 from typing import Optional
 
@@ -53,11 +55,9 @@ class MLP:
     """
 
     def __init__(self, sizes, seed: int = 0, weights=None, biases=None):
-        self.sizes = tuple(sizes)
-        if len(self.sizes) < 2:
-            raise ValueError("an MLP needs at least an input and an output size")
-        if self.sizes[-1] != 1:
-            raise ValueError("a heuristic model has a scalar output")
+        self.sizes = _check_sizes(sizes)
+        if (weights is None) != (biases is None):
+            raise ValueError("an MLP takes both weights and biases, or neither")
         if weights is None:
             rng = random.Random(seed)
             self.weights = [
@@ -69,8 +69,7 @@ class MLP:
             ]
             self.biases = [[0.0] * fan_out for fan_out in self.sizes[1:]]
         else:
-            self.weights = [[list(row) for row in layer] for layer in weights]
-            self.biases = [list(b) for b in biases]
+            self.weights, self.biases = _checked_parameters(self.sizes, weights, biases)
         self._np_cache: Optional[tuple] = None
 
     # -- shape helpers -----------------------------------------------------
@@ -95,7 +94,17 @@ class MLP:
         return flat
 
     def set_flat(self, flat) -> None:
-        """Inverse of :meth:`get_flat`."""
+        """Inverse of :meth:`get_flat`.
+
+        The length is checked before anything is written. Writing first and
+        counting afterwards left a wrong-length vector half-applied — rows
+        truncated, the parameter count in the error already wrong — on a model
+        the caller still held.
+        """
+        flat = list(flat)
+        expected = self.num_parameters
+        if len(flat) != expected:
+            raise ValueError(f"expected {expected} parameters, got {len(flat)}")
         index = 0
         for layer in self.weights:
             for row in layer:
@@ -106,10 +115,6 @@ class MLP:
             width = len(bias)
             bias[:] = flat[index : index + width]
             index += width
-        if index != len(flat):
-            raise ValueError(
-                f"expected {self.num_parameters} parameters, got {len(flat)}"
-            )
         self._np_cache = None
 
     # -- inference ---------------------------------------------------------
@@ -273,7 +278,12 @@ class MLP:
 
     @classmethod
     def from_dict(cls, data: dict) -> "MLP":
-        return cls(data["sizes"], weights=data["weights"], biases=data["biases"])
+        """Rebuild a model, refusing one whose parameters do not fit its shape."""
+        try:
+            sizes, weights, biases = data["sizes"], data["weights"], data["biases"]
+        except (KeyError, TypeError):
+            raise ValueError("a model needs 'sizes', 'weights' and 'biases'") from None
+        return cls(sizes, weights=weights, biases=biases)
 
     def copy(self) -> "MLP":
         return MLP(self.sizes, weights=self.weights, biases=self.biases)
@@ -330,6 +340,72 @@ class Adam:
                     self.lr * (mb[j] / bias1) / (math.sqrt(vb[j] / bias2) + self.eps)
                 )
         self.model._np_cache = None
+
+
+def _check_sizes(sizes) -> tuple:
+    try:
+        sizes = tuple(operator.index(size) for size in sizes)
+    except TypeError:
+        raise ValueError(
+            f"layer sizes must be a list of integers, got {sizes!r}"
+        ) from None
+    if len(sizes) < 2:
+        raise ValueError("an MLP needs at least an input and an output size")
+    if any(size < 1 for size in sizes):
+        raise ValueError(f"layer sizes must be positive, got {list(sizes)}")
+    if sizes[-1] != 1:
+        raise ValueError("a heuristic model has a scalar output")
+    return sizes
+
+
+def _checked_parameters(sizes, weights, biases):
+    """Copy ``weights`` and ``biases`` as floats, refusing any that do not fit.
+
+    A model read from disk is the case this exists for. Nothing downstream
+    checks shapes: the pure-Python forward pass ``zip``\\ s rows against inputs
+    and silently truncates whichever is longer, while the NumPy path raises —
+    so a model with the wrong input width, a ragged row or a ``sizes`` field
+    that does not describe its own weights gave a heuristic whose value
+    depended on whether NumPy was installed. A non-finite weight turns every
+    prediction into ``nan``, which the planners' priority queues then order
+    arbitrarily.
+    """
+    layers = len(sizes) - 1
+    try:
+        weights = [[list(row) for row in layer] for layer in weights]
+        biases = [list(bias) for bias in biases]
+    except TypeError:
+        raise ValueError("weights and biases must be nested lists of numbers") from None
+    if len(weights) != layers or len(biases) != layers:
+        raise ValueError(
+            f"sizes {list(sizes)} describe {layers} layers, but there are "
+            f"{len(weights)} weight and {len(biases)} bias layers"
+        )
+    for index, (fan_in, fan_out) in enumerate(zip(sizes, sizes[1:])):
+        layer = weights[index]
+        if len(layer) != fan_out or any(len(row) != fan_in for row in layer):
+            shape = sorted({len(row) for row in layer})
+            raise ValueError(
+                f"layer {index} must be {fan_out} rows of {fan_in} weights to match "
+                f"sizes {list(sizes)}; it has {len(layer)} rows of {shape}"
+            )
+        if len(biases[index]) != fan_out:
+            raise ValueError(
+                f"layer {index} must have {fan_out} biases to match sizes "
+                f"{list(sizes)}; it has {len(biases[index])}"
+            )
+    weights = [[[_finite(v) for v in row] for row in layer] for layer in weights]
+    biases = [[_finite(v) for v in bias] for bias in biases]
+    return weights, biases
+
+
+def _finite(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise ValueError(f"a parameter must be a number, got {value!r}")
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"a parameter must be finite, got {value!r}")
+    return value
 
 
 def _softplus(x: float) -> float:

@@ -216,11 +216,18 @@ def collect_research() -> dict:
         data = json.load(handle)
 
     def rows(summary):
+        # ``summarise_transfer`` reports no plan cost (None) for a heuristic
+        # that solved none of the instances the others did; a cache measured
+        # before that change has 0.0 there instead.
         return {
             name: {
                 "expanded": round(entry["mean_expanded"], 1),
                 "seconds": round(entry["mean_seconds"], 4),
-                "cost": round(entry["mean_cost"], 1),
+                "cost": (
+                    None
+                    if entry.get("mean_cost") is None
+                    else round(entry["mean_cost"], 1)
+                ),
                 "coverage": round(entry["coverage"], 2),
             }
             for name, entry in summary.items()

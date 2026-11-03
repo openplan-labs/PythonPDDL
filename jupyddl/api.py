@@ -37,18 +37,28 @@ def solve_task(
     needs a heuristic means ``blind``.
     """
     planner = make_planner(search, **planner_kwargs)
-    heur = None
-    name = heuristic
-    if name == "none":
-        name = "blind" if planner.requires_heuristic else None
-    elif not name and planner.requires_heuristic:
-        # An optimal planner gets an admissible default: hff would quietly
-        # cost it its guarantee.
-        name = "lmcut" if planner.optimal else "hff"
-    if name:
-        heur = make_heuristic(name, task)
+    name = resolve_heuristic(planner, heuristic)
+    heur = make_heuristic(name, task) if name else None
     budget = make_budget(max_expansions, time_limit)
     return planner.search(task, heur, observer=observer, budget=budget)
+
+
+def resolve_heuristic(planner, heuristic):
+    """The heuristic :func:`solve_task` actually runs ``planner`` with.
+
+    ``planner`` is a planner instance; ``heuristic`` is what the caller asked
+    for. Returns a registry name or spec, the heuristic object passed in, or
+    ``None`` for no heuristic at all. Anything that records which heuristic
+    produced a result should ask this rather than echo the request, which for
+    ``None`` and ``"none"`` names something other than what ran.
+    """
+    if heuristic == "none":
+        return "blind" if planner.requires_heuristic else None
+    if not heuristic and planner.requires_heuristic:
+        # An optimal planner gets an admissible default: hff would quietly
+        # cost it its guarantee.
+        return "lmcut" if planner.optimal else "hff"
+    return heuristic or None
 
 
 def solve(

@@ -127,18 +127,28 @@ def learn_heuristic(
     started = time.perf_counter()
     log = []
 
+    # Materialise every size argument before anything reads it. Each is read
+    # more than once below, and a generator passed in would be spent by the
+    # first read: the ladder was recorded as ``[]`` and ``max()`` of it raised.
+    sizes = list(sizes)
+    if not sizes:
+        raise ValueError("learn_heuristic needs at least one training size")
+    if bootstrap_sizes is not None:
+        bootstrap_sizes = list(bootstrap_sizes)
+    if cem_sizes is not None:
+        cem_sizes = list(cem_sizes)
+
     def note(message):
         log.append(message)
         if verbose:  # pragma: no cover - operator convenience
             print(message)
 
     tasks = tasks_from_generator(kind, sizes, seed=seed, seeds_per_size=seeds_per_size)
-    note(f"ladder: {len(tasks)} instances of {kind}, sizes {list(sizes)}")
+    note(f"ladder: {len(tasks)} instances of {kind}, sizes {sizes}")
 
     # The vocabulary must span every task the model will ever see, including
     # the larger ones it is only evaluated on: a symbol first encountered at
     # evaluation time would otherwise have no slot.
-    sizes = list(sizes)
     if cem_iterations and cem_sizes is None:
         # A rung above the training ladder: far enough that search has room to
         # be improved, near enough that it can still be searched cheaply.
@@ -268,29 +278,85 @@ def evaluate_transfer(
                     "evaluated": result.stats.evaluated,
                     "seconds": time.perf_counter() - started,
                     "truncated": result.truncated,
+                    "budget": max_expansions,
                 }
             )
     return rows
 
 
-def summarise_transfer(rows) -> dict:
-    """Per-heuristic coverage, mean expansions and mean time over solved runs."""
+def summarise_transfer(rows, failure_penalty: float = 2.0) -> dict:
+    """Per-heuristic coverage, and means that a low coverage cannot flatter.
+
+    This used to average each heuristic over the runs *it* solved, which
+    rewards giving up: a heuristic that solves only the easiest instance
+    reports that instance's cost as its mean, and so looks many times better
+    than one that also solved the hard ones. Now:
+
+    * ``coverage`` is the fraction solved, and belongs next to every mean.
+    * ``mean_expanded`` and ``mean_seconds`` are over **every** instance. An
+      unsolved run is charged ``failure_penalty`` times the larger of the
+      expansion budget it ran under (``row["budget"]``, when recorded) and the
+      most any configuration spent on that instance — so failing is never
+      cheaper than solving, by the same rule as
+      :func:`jupyddl.learn.rl.search_cost`. Seconds are charged the same way
+      against the slowest run on the instance.
+    * ``mean_cost`` is over the ``common`` instances that every configuration
+      with any coverage solved, since a failure has no plan cost to charge.
+      It is ``None`` when there are none.
+
+    ``solved``, ``total``, ``expanded`` and ``seconds`` are the raw sums the
+    means are built from (failures charged as above).
+    """
+    rows = list(rows)
+    instances: dict = {}
+    for row in rows:
+        instances.setdefault(row["instance"], []).append(row)
+
     summary: dict = {}
     for row in rows:
-        entry = summary.setdefault(
+        summary.setdefault(
             row["heuristic"],
-            {"solved": 0, "total": 0, "expanded": 0, "seconds": 0.0, "cost": 0},
+            {"solved": 0, "total": 0, "expanded": 0.0, "seconds": 0.0},
         )
-        entry["total"] += 1
-        if row["solved"]:
-            entry["solved"] += 1
-            entry["expanded"] += row["expanded"]
-            entry["seconds"] += row["seconds"]
-            entry["cost"] += row["cost"] or 0
-    for entry in summary.values():
-        solved = entry["solved"] or 1
-        entry["mean_expanded"] = entry["expanded"] / solved
-        entry["mean_seconds"] = entry["seconds"] / solved
-        entry["mean_cost"] = entry["cost"] / solved
-        entry["coverage"] = entry["solved"] / (entry["total"] or 1)
+    for runs in instances.values():
+        most_expanded = max(
+            [run["expanded"] for run in runs] + [run.get("budget") or 0 for run in runs]
+        )
+        slowest = max(run["seconds"] for run in runs)
+        for run in runs:
+            entry = summary[run["heuristic"]]
+            entry["total"] += 1
+            if run["solved"]:
+                entry["solved"] += 1
+                entry["expanded"] += run["expanded"]
+                entry["seconds"] += run["seconds"]
+            else:
+                entry["expanded"] += failure_penalty * most_expanded
+                entry["seconds"] += failure_penalty * slowest
+
+    # Plan cost only compares on instances everyone with any coverage solved.
+    # A configuration that solved nothing has no cost to compare and is left
+    # out of the intersection rather than emptying it.
+    contenders = {name for name, entry in summary.items() if entry["solved"]}
+    common = [
+        name
+        for name, runs in instances.items()
+        if all(
+            any(run["solved"] for run in runs if run["heuristic"] == heuristic)
+            for heuristic in contenders
+        )
+    ]
+    for name, entry in summary.items():
+        total = entry["total"] or 1
+        entry["coverage"] = entry["solved"] / total
+        entry["mean_expanded"] = entry["expanded"] / total
+        entry["mean_seconds"] = entry["seconds"] / total
+        costs = [
+            run["cost"] or 0
+            for instance in common
+            for run in instances[instance]
+            if run["heuristic"] == name and run["solved"]
+        ]
+        entry["common"] = len(common)
+        entry["mean_cost"] = sum(costs) / len(costs) if costs else None
     return summary

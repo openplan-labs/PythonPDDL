@@ -692,10 +692,12 @@ def plot_benchmark_dashboard(
     if not rows:
         raise ValueError("no benchmark rows to plot")
     pal = palette(dark)
+    from ..benchmark import row_label
+
     configs: list = []
     instances: list = []
     for row in rows:
-        key = f"{row.planner}/{row.heuristic}" if row.heuristic else row.planner
+        key = row_label(row)
         if key not in configs:
             configs.append(key)
         if row.instance not in instances:
@@ -703,8 +705,7 @@ def plot_benchmark_dashboard(
 
     lookup = {}
     for row in rows:
-        key = f"{row.planner}/{row.heuristic}" if row.heuristic else row.planner
-        lookup[(row.instance, key)] = row
+        lookup[(row.instance, row_label(row))] = row
 
     colors = [series_color(i, dark) for i in range(len(configs))]
     positions = list(range(len(configs)))
