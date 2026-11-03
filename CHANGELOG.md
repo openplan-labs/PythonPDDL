@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Semantic releases, decided by what was merged.** Pull request titles are
+  now Conventional Commits (a `pr-title` check enforces it), and
+  release-please keeps one release PR whose version follows from them:
+  `fix` → patch, `feat` → minor, `feat!` → major. Merging that PR tags the
+  commit and starts the existing PyPI pipeline. The hand-written notes in this
+  file are filed under the new version automatically, and `web/dist` is
+  rebuilt with the new version. See `.docs/RELEASING.md`.
 - **The intent to publish, written down.** `.docs/PUBLISHING.md` says why and
   where we mean to publish jupyddl as citable research software — a Zenodo DOI
   per release, a JOSS paper, ICAPS workshops for the research results — with a

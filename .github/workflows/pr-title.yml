@@ -1,0 +1,37 @@
+name: pr-title
+
+# Pull requests are squash-merged, so the title becomes the commit on main --
+# and release-please reads that commit to decide the next version. A title
+# that is not a Conventional Commit is a change the release never mentions.
+#
+#     feat: add the GOOSE feature extractor        -> minor release
+#     fix(lmcut): handle an empty goal             -> patch release
+#     feat!: drop Python 3.10                      -> major release
+#     docs: explain the budget contract            -> no release on its own
+#
+# Plain shell, no third-party action: it only reads the title.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  conventional:
+    name: conventional title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the title release-please will read
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert|style|deps)(\([A-Za-z0-9._/-]+\))?!?: [^[:space:]].*$'
+          if [[ "$TITLE" =~ $pattern ]]; then
+            echo "ok: $TITLE"
+            exit 0
+          fi
+          echo "::error::The PR title is not a Conventional Commit: '$TITLE'"
+          echo "Use '<type>[(scope)][!]: <summary>', for example 'fix(lmcut): handle an empty goal'."
+          echo "Types: feat (minor), fix/perf (patch), feat!/fix! (major), docs, chore, ci, test, refactor, build, style, revert, deps."
+          exit 1

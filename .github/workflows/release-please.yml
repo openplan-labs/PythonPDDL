@@ -1,0 +1,96 @@
+name: release-please
+
+# Semantic versioning from what was merged, with no one choosing a number.
+#
+# Every pull request is squash-merged, so its *title* becomes the commit on
+# main, and `pr-title.yml` makes that title a Conventional Commit. From those,
+# release-please keeps one open "release PR" up to date:
+#
+#     fix: ...          -> patch  (2.4.0 -> 2.4.1)
+#     feat: ...         -> minor  (2.4.0 -> 2.5.0)
+#     feat!: ... / a "BREAKING CHANGE:" footer -> major (2.4.0 -> 3.0.0)
+#     docs:, chore:, ci:, test:, refactor: ... -> no release on their own
+#
+# The release PR bumps pyproject.toml and jupyddl.__version__, writes the
+# changelog section, and (job `finish-release-pr`) files the hand-written
+# [Unreleased] notes under it and rebuilds web/dist, which records the
+# version. Merging it is the release decision: release-please then tags the
+# commit and creates the GitHub Release, and `publish` hands the tag to
+# `release.yml`, which builds, verifies and publishes to PyPI exactly as a
+# hand-pushed tag would.
+#
+# Why a dispatch rather than letting the tag trigger release.yml: a tag or
+# release created with the workflow's own GITHUB_TOKEN starts no workflows,
+# by GitHub's design. workflow_dispatch is the exception, so this is the one
+# hand-off that works without a stored personal token.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write       # release-please: the tag, the release, its branch
+  pull-requests: write  # release-please: open and update the release PR
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      pr: ${{ steps.release.outputs.pr }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  finish-release-pr:
+    needs: release-please
+    if: >-
+      needs.release-please.outputs.pr != ''
+      && needs.release-please.outputs.release_created != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
+          submodules: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: File the hand-written notes and rebuild web/dist
+        run: python tools/release_pr_fixup.py
+
+      - name: Push the result to the release PR
+        run: |
+          if git diff --quiet; then
+            echo "Release PR already complete."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: file the release notes and rebuild web/dist"
+          git push
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write  # start release.yml
+    steps:
+      - name: Hand the new tag to the release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f target=pypi
+          echo "Started release.yml for $TAG"

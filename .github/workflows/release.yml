@@ -2,6 +2,11 @@ name: release
 
 # Publish a release to PyPI and cut the GitHub Release to match.
 #
+# Normally nobody starts this by hand: merging release-please's release PR
+# tags the commit and `release-please.yml` dispatches this workflow on that
+# tag (see the comment there for why it is a dispatch). The paths below still
+# work and run exactly the same checks.
+#
 # Push a tag and this does the rest:
 #
 #     git tag -a v2.3.0 -m "jupyddl 2.3.0" && git push origin v2.3.0
@@ -67,6 +72,23 @@ jobs:
             pathlib.Path('pyproject.toml').read_text(), re.M).group(1))")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "pyproject declares $version"
+
+      # A dispatch from a branch creates the tag itself. If that version was
+      # already released, PyPI would quietly skip the files (skip-existing)
+      # while the existing GitHub Release had its assets replaced from a
+      # different commit. Refuse: a new release needs a new version.
+      - name: Refuse to release a version twice
+        if: >-
+          github.event_name == 'workflow_dispatch'
+          && github.event.inputs.target == 'pypi'
+          && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="v${{ steps.version.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::$tag already exists. Bump the version (release-please does) before releasing again."
+            exit 1
+          fi
+          echo "$tag is new"
 
       # A tag that disagrees with the package version publishes something
       # nobody asked for under a name nobody expects, and PyPI will not let

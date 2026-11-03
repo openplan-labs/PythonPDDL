@@ -1,7 +1,52 @@
 # Releasing jupyddl
 
+## The normal way: merge the release PR
+
+Releases are **semantic and automatic**. Nobody picks a version number.
+
+1. Every pull request is squash-merged, so its **title** becomes the commit
+   on `main`. The `pr-title` check requires a
+   [Conventional Commit](https://www.conventionalcommits.org) title:
+
+   | Title | Release it triggers |
+   |---|---|
+   | `fix: …`, `fix(lmcut): …`, `perf: …` | patch, 2.4.0 → 2.4.1 |
+   | `feat: …` | minor, 2.4.0 → 2.5.0 |
+   | `feat!: …`, or a `BREAKING CHANGE:` footer | major, 2.4.0 → 3.0.0 |
+   | `docs:`, `chore:`, `ci:`, `test:`, `refactor:`, `build:`, `style:` | none on its own; it rides along with the next one |
+
+2. On every push to `main`, `release-please.yml` keeps **one release PR**
+   (`chore: release X.Y.Z`) up to date. It bumps `pyproject.toml` and
+   `jupyddl.__version__`, writes the changelog section from the merged
+   titles, files the hand-written `## [Unreleased]` notes under it, and
+   rebuilds `web/dist`, which records the version. The bump is the largest any
+   merged title asks for.
+3. **Merging the release PR is the release.** release-please tags the merge
+   commit and creates the GitHub Release. It then starts `release.yml` on that
+   tag, which builds, verifies, publishes to PyPI and attaches the artifacts,
+   with the same checks as below.
+
+Want a release after every merge? Merge the release PR right after. Want
+batches? Let it collect. Either way the version follows from what went in.
+
+**One-time repository settings** (a maintainer has to do these):
+
+- *Settings → Actions → General → Workflow permissions*: tick **Allow GitHub
+  Actions to create and approve pull requests**. Without it release-please
+  cannot open its PR.
+- *Settings → General → Pull Requests*: allow squash merging and set its
+  default commit message to **Pull request title**, so the checked title is
+  what lands on `main`.
+- Do **not** make `pr-title` (or `tests`) a required check without an
+  exception for release-please's PR. A PR opened with the workflow's own
+  token starts no workflows, so those checks never report on it.
+  `release.yml` repeats every check that matters before publishing.
+
+## By hand
+
 `.github/workflows/release.yml` builds, verifies, publishes to PyPI and
-creates the GitHub Release from the changelog. There are two ways to start it.
+creates the GitHub Release from the changelog. You can also start it yourself,
+in one of two ways.
 
 **From the Actions tab** — no local git, nothing depending on one person's
 laptop:
